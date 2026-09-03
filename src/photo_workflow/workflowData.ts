@@ -1,0 +1,297 @@
+import { OrthodonticViewDefinition, ViewId } from '../types';
+
+export const ORTHODONTIC_VIEWS: OrthodonticViewDefinition[] = [
+  // --- EXTRAORAL PHOTOGRAPHS (1 - 6) ---
+  {
+    id: 'FRONTAL_REST',
+    index: 1,
+    name: 'Frontal — Rest',
+    category: 'extraoral',
+    shortCode: 'FR',
+    subtitle: 'Extraoral Facial Symmetry',
+    clinicalPurpose:
+      'Evaluate facial symmetry, vertical facial thirds, intercanthal/interpupillary balance, and resting lip competence without strain.',
+    landmarks: [
+      'Glabella to Gnathion (Facial Midline)',
+      'Interpupillary Horizontal Plane',
+      'Subnasale & Commissure Level',
+      'Relaxed Lip Posture (2-3mm incisal show if normal)',
+    ],
+    tips: [
+      'Have patient look straight ahead into the camera lens',
+      'Lips relaxed in repose (not pressed tightly or smiling)',
+      'Keep Frankfort horizontal plane parallel to the floor',
+      'Shoulders relaxed and aligned evenly',
+    ],
+    preferredFacing: 'environment',
+    defaultZoom: 1.5,
+    overlayType: 'frontal_rest',
+  },
+  {
+    id: 'FRONTAL_SMILE',
+    index: 2,
+    name: 'Frontal — Smile',
+    category: 'extraoral',
+    shortCode: 'FS',
+    subtitle: 'Extraoral Smile Aesthetics',
+    clinicalPurpose:
+      'Assess smile arc contour, transverse smile fullness, buccal corridors, gingival display, and dental vs. facial midline alignment during maximum social smile.',
+    landmarks: [
+      'Smile Arc curvature relative to lower lip',
+      'Transverse Buccal Corridors (Bilateral clearance)',
+      'Gingival Display (0-2mm ideal aesthetic window)',
+      'Facial vs. Maxillary Midline Coincidence',
+    ],
+    tips: [
+      'Instruct patient to give a full, natural, unstrained smile',
+      'Keep head upright without upward or downward chin tilt',
+      'Ensure teeth are fully visible in the smile region guide',
+      'Maintain exact same distance and angle as Frontal Rest',
+    ],
+    preferredFacing: 'environment',
+    defaultZoom: 1.5,
+    overlayType: 'frontal_smile',
+  },
+  {
+    id: 'RIGHT_PROFILE',
+    index: 3,
+    name: 'Right Profile',
+    category: 'extraoral',
+    shortCode: 'RP',
+    subtitle: 'Extraoral Sagittal Analysis',
+    clinicalPurpose:
+      'Assess sagittal skeletal relationship (Class I, II, or III), soft tissue facial convexity, nasolabial angle, chin projection, and E-line lip posture.',
+    landmarks: [
+      'Frankfort Horizontal Plane (Porion-Orbitale)',
+      'True Vertical Plumb Line (Subnasale NHP reference)',
+      'Ricketts E-Line (Esthetic Line: Tip of Nose to Pogonion)',
+      'Nasolabial Angle (90°-110° reference)',
+    ],
+    tips: [
+      'Patient turned exactly 90 degrees to the right',
+      'Only the right eyelash should be visible (zero 3/4 turn)',
+      'Maintain Natural Head Position (NHP) with True Vertical line',
+      'Frankfort plane must be strictly horizontal',
+    ],
+    preferredFacing: 'environment',
+    defaultZoom: 1.5,
+    overlayType: 'right_profile',
+  },
+  {
+    id: 'LEFT_PROFILE',
+    index: 4,
+    name: 'Left Profile',
+    category: 'extraoral',
+    shortCode: 'LP',
+    subtitle: 'Extraoral Sagittal Analysis',
+    clinicalPurpose:
+      'Evaluate bilateral soft tissue profile symmetry, mandibular growth direction, and lip projection on patient’s left aspect.',
+    landmarks: [
+      'Frankfort Horizontal Plane (Porion-Orbitale)',
+      'True Vertical Plumb Line (Natural Head Position)',
+      'Ricketts Esthetic Plane',
+      'Subnasale to Soft Tissue Pogonion',
+    ],
+    tips: [
+      'Patient turned exactly 90 degrees to the left',
+      'Ensure only the left eyelash/brow is visible without opposite eye peek',
+      'Maintain Natural Head Position (NHP) with True Vertical plumb line',
+      'Hair pulled behind ear to clearly reveal tragus and jawline',
+    ],
+    preferredFacing: 'environment',
+    defaultZoom: 1.5,
+    overlayType: 'left_profile',
+  },
+  {
+    id: 'RIGHT_OBLIQUE',
+    index: 5,
+    name: 'Right Oblique',
+    category: 'extraoral',
+    shortCode: 'RO',
+    subtitle: 'Extraoral 3/4 Smile View (45°)',
+    clinicalPurpose:
+      'Assess dynamic 3/4 smile aesthetics, cheekbone (malar) prominence, incisor inclination, and display of posterior teeth.',
+    landmarks: [
+      '45° Dynamic Malar Contour Guide',
+      '45° Yaw Angle Leveler Sensor Verification',
+      'Smile Arc & Incisor Torque',
+      'Tip of nose tangent to contralateral cheek silhouette',
+    ],
+    tips: [
+      'Rotate patient 45 degrees towards the right until sensor reads green',
+      'Tip of nose should touch/align with the contralateral cheek silhouette',
+      'Patient displaying a natural full smile',
+      'Keep camera level with patient’s eyes',
+    ],
+    preferredFacing: 'environment',
+    defaultZoom: 1.5,
+    overlayType: 'right_oblique',
+  },
+  {
+    id: 'LEFT_OBLIQUE',
+    index: 6,
+    name: 'Left Oblique',
+    category: 'extraoral',
+    shortCode: 'LO',
+    subtitle: 'Extraoral 3/4 Smile View (45°)',
+    clinicalPurpose:
+      'Assess left 3/4 smile dynamics, malar balance, and tooth display continuity across the left dental arch.',
+    landmarks: [
+      '45° Dynamic Left Malar Contour Guide',
+      '45° Yaw Angle Leveler Sensor Verification',
+      'Left Buccal Contour in 3/4 Smile',
+      'Incisal plane balance',
+    ],
+    tips: [
+      'Rotate patient 45 degrees towards the left until sensor reads green',
+      'Patient smiling naturally with relaxed head tilt',
+      'Nose tip tangent to the right cheek contour',
+      'Maintain even ring-flash or clinical lighting',
+    ],
+    preferredFacing: 'environment',
+    defaultZoom: 1.5,
+    overlayType: 'left_oblique',
+  },
+
+  // --- INTRAORAL PHOTOGRAPHS (7 - 11) ---
+  {
+    id: 'ANTERIOR_INTRAORAL',
+    index: 7,
+    name: 'Anterior',
+    category: 'intraoral',
+    shortCode: 'ANT',
+    subtitle: 'Intraoral Maximum Intercuspation',
+    clinicalPurpose:
+      'Record maximum intercuspation, anterior overjet and overbite, dental midline coincidence, anterior crowding/spacing, and gingival zeniths.',
+    landmarks: [
+      'Dental Midline (Maxillary Central Incisors #8-#9)',
+      'Horizontal Occlusal Plane (bisecting frame)',
+      'Maxillary & Mandibular Gingival Zeniths',
+      'Equal Retractor Clearance (Bilateral cheeks pulled outward)',
+    ],
+    tips: [
+      'Use dual bilateral lip/cheek retractors pulled outward and forward',
+      'Teeth completely closed in true centric occlusion (bite all the way on back teeth)',
+      'Center camera on the maxillary dental midline',
+      'Keep occlusal plane strictly horizontal (no tilt)',
+      'Dry anterior teeth with gentle air stream if saliva present',
+    ],
+    preferredFacing: 'environment',
+    defaultZoom: 2.0,
+    overlayType: 'anterior',
+  },
+  {
+    id: 'RIGHT_BUCCAL',
+    index: 8,
+    name: 'Right Buccal',
+    category: 'intraoral',
+    shortCode: 'RB',
+    subtitle: 'Intraoral Canine & Molar Relationship',
+    clinicalPurpose:
+      'Record Angle Class I/II/III molar and canine relationships, transverse crossbites, overjet, and vertical interdigitation on the right side.',
+    landmarks: [
+      'Right Canine Guidance Marker (#6 Cusp Alignment)',
+      'Angle Class I 1st Molar Key (#3 MB Cusp into #30 Groove)',
+      'Horizontal Occlusal Plane Curve',
+      'Posterior Retractor Pull Indicator (To 2nd Molar)',
+    ],
+    tips: [
+      'Pull right cheek retractor firmly back towards the ear to expose 2nd molar',
+      'Relax left retractor so lips do not pull tight',
+      'Direct camera perpendicular to the right premolar/molar segment (approx. 45° to face)',
+      'Ensure patient bites firmly in maximum intercuspation',
+      'Focus on the canine-premolar region with sufficient depth of field',
+    ],
+    preferredFacing: 'environment',
+    defaultZoom: 2.0,
+    overlayType: 'right_buccal',
+  },
+  {
+    id: 'LEFT_BUCCAL',
+    index: 9,
+    name: 'Left Buccal',
+    category: 'intraoral',
+    shortCode: 'LB',
+    subtitle: 'Intraoral Canine & Molar Relationship',
+    clinicalPurpose:
+      'Record left Angle molar and canine classification, vertical overlap, and transverse relationships up to the second terminal molar.',
+    landmarks: [
+      'Left Canine Guidance Marker (#11 Cusp Alignment)',
+      'Angle Class I 1st Molar Key (#14 MB Cusp into #19 Groove)',
+      'Horizontal Occlusal Plane Curve',
+      'Posterior Retractor Pull Indicator (To 2nd Molar)',
+    ],
+    tips: [
+      'Pull left cheek retractor back towards left ear to expose the second molar',
+      'Relax right retractor to allow cheek laxity',
+      'Aim camera perpendicular to the left buccal quadrant',
+      'Keep occlusal plane horizontal across the frame',
+      'Eliminate saliva bubbles from the buccal vestibule',
+    ],
+    preferredFacing: 'environment',
+    defaultZoom: 2.0,
+    overlayType: 'left_buccal',
+  },
+  {
+    id: 'MAXILLARY_OCCLUSAL',
+    index: 10,
+    name: 'Maxillary Occlusal',
+    category: 'intraoral',
+    shortCode: 'MAX',
+    subtitle: 'Intraoral Upper Arch Form',
+    clinicalPurpose:
+      'Record maxillary arch form (broad parabolic curve), dental crowding, rotations, palatal vault shape, transverse width, and molar rotations.',
+    landmarks: [
+      'Broad Parabolic Catenary Maxillary Arch (#1-#16)',
+      'Mid-Palatal Suture Raphe (Vertical Midline)',
+      'Central Incisor Landing Curve (#8-#9)',
+      'Intraoral Mirror Boundary (Prevents Incisal Cutoff)',
+    ],
+    tips: [
+      'Use high-quality intraoral occlusal glass/rhodium mirror with warm water or air to prevent fogging',
+      'Place mirror behind the terminal second molars at a 45° angle to the occlusal plane',
+      'Pull upper lip upward and away using a single broad retractor',
+      'Direct camera into the mirror reflection perpendicular to the mirror surface',
+      'Ensure all four incisors and bilateral 2nd molars are entirely visible without incisal edge cutoff',
+    ],
+    preferredFacing: 'environment',
+    defaultZoom: 2.0,
+    overlayType: 'maxillary_occlusal',
+  },
+  {
+    id: 'MANDIBULAR_OCCLUSAL',
+    index: 11,
+    name: 'Mandibular Occlusal',
+    category: 'intraoral',
+    shortCode: 'MAND',
+    subtitle: 'Intraoral Lower Arch Form',
+    clinicalPurpose:
+      'Record mandibular arch form, anterior crowding (Little’s Irregularity Index), curve of Spee/Wilson, and lingual tooth positions.',
+    landmarks: [
+      'Broad Parabolic Catenary Mandibular Arch (#17-#32)',
+      'Mandibular Arch Midline',
+      'Lower Incisal Arc (#24-#25)',
+      'Intraoral Mirror Boundary Guideline & Tongue Clearance',
+    ],
+    tips: [
+      'Instruct patient to lift tongue to the palate, place mirror behind terminal molars, then relax tongue downward',
+      'Pull lower lip forward and down with broad retractor',
+      'Angle mirror at approximately 45 degrees to the mandibular occlusal plane',
+      'Ensure mirror is fog-free and completely captures from central incisors to terminal molars',
+      'Align lingual arch midline vertically in the template',
+    ],
+    preferredFacing: 'environment',
+    defaultZoom: 2.0,
+    overlayType: 'mandibular_occlusal',
+  },
+];
+
+export function getViewById(viewId: ViewId): OrthodonticViewDefinition {
+  const found = ORTHODONTIC_VIEWS.find((v) => v.id === viewId);
+  return found || ORTHODONTIC_VIEWS[0];
+}
+
+export function getViewByIndex(index: number): OrthodonticViewDefinition {
+  const normalizedIndex = Math.max(1, Math.min(11, index));
+  return ORTHODONTIC_VIEWS[normalizedIndex - 1];
+}
