@@ -7,7 +7,7 @@ interface LiveGuidanceHUDProps {
   currentView?: OrthodonticViewDefinition;
 }
 
-export const LiveGuidanceHUD: React.FC<LiveGuidanceHUDProps> = ({ guidance, currentView }) => {
+const LiveGuidanceHUDComponent: React.FC<LiveGuidanceHUDProps> = ({ guidance, currentView }) => {
   const isReady = guidance.isReady;
   const isCategoryExtraoral = currentView?.category === 'extraoral';
   const roll = Math.round(guidance.headRollDeg || 0);
@@ -54,3 +54,5 @@ export const LiveGuidanceHUD: React.FC<LiveGuidanceHUDProps> = ({ guidance, curr
     </div>
   );
 };
+
+export const LiveGuidanceHUD = React.memo(LiveGuidanceHUDComponent);

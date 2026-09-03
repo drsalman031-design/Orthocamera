@@ -36,7 +36,7 @@ interface CameraManagerProps {
   children?: React.ReactNode;
 }
 
-export const CameraManager: React.FC<CameraManagerProps> = ({
+const CameraManagerComponent: React.FC<CameraManagerProps> = ({
   currentView,
   guidanceSensitivity,
   onGuidanceUpdate,
@@ -707,3 +707,5 @@ export const CameraManager: React.FC<CameraManagerProps> = ({
     </div>
   );
 };
+
+export const CameraManager = React.memo(CameraManagerComponent);

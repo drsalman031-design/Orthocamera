@@ -20,6 +20,12 @@ export interface MediaPipeStatus {
   delegate: 'GPU' | 'CPU';
 }
 
+const FACE_OVAL_INDICES = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10];
+const LIP_INDICES = [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291, 375, 321, 405, 314, 17, 84, 181, 91, 146, 61];
+const LEFT_EYE_INDICES = [33, 160, 158, 133, 153, 144, 33];
+const RIGHT_EYE_INDICES = [263, 387, 385, 362, 380, 373, 263];
+const NOSE_BRIDGE_INDICES = [168, 6, 197, 195, 5, 4, 1];
+
 class MediaPipeVisionEngineSingleton {
   private faceLandmarker: FaceLandmarker | null = null;
   private isInitializing = false;
@@ -109,7 +115,7 @@ class MediaPipeVisionEngineSingleton {
             delegate,
           },
           outputFaceBlendshapes: true,
-          outputFacialTransformationMatrixes: true,
+          outputFacialTransformationMatrixes: false,
           runningMode: 'VIDEO',
           numFaces: 1,
           minFaceDetectionConfidence: 0.35,
@@ -241,18 +247,12 @@ class MediaPipeVisionEngineSingleton {
         y: landmarks[idx]?.y ?? 0.5,
       });
 
-      const faceOvalIndices = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10];
-      const lipIndices = [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291, 375, 321, 405, 314, 17, 84, 181, 91, 146, 61];
-      const leftEyeIndices = [33, 160, 158, 133, 153, 144, 33];
-      const rightEyeIndices = [263, 387, 385, 362, 380, 373, 263];
-      const noseBridgeIndices = [168, 6, 197, 195, 5, 4, 1];
-
       const meshContours: MeshContours = {
-        faceOval: faceOvalIndices.map(getPt),
-        lips: lipIndices.map(getPt),
-        leftEye: leftEyeIndices.map(getPt),
-        rightEye: rightEyeIndices.map(getPt),
-        noseBridge: noseBridgeIndices.map(getPt),
+        faceOval: FACE_OVAL_INDICES.map(getPt),
+        lips: LIP_INDICES.map(getPt),
+        leftEye: LEFT_EYE_INDICES.map(getPt),
+        rightEye: RIGHT_EYE_INDICES.map(getPt),
+        noseBridge: NOSE_BRIDGE_INDICES.map(getPt),
         leftPupil: landmarks[468] ? getPt(468) : getPt(33),
         rightPupil: landmarks[473] ? getPt(473) : getPt(263),
       };

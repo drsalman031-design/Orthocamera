@@ -19,7 +19,7 @@ interface CameraControlsProps {
   onToggleAutoCapture?: () => void;
 }
 
-export const CameraControls: React.FC<CameraControlsProps> = ({
+const CameraControlsComponent: React.FC<CameraControlsProps> = ({
   guidance,
   onCapture,
   flashMode,
@@ -177,3 +177,5 @@ export const CameraControls: React.FC<CameraControlsProps> = ({
     </div>
   );
 };
+
+export const CameraControls = React.memo(CameraControlsComponent);

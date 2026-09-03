@@ -90,7 +90,7 @@ const LabelPill: React.FC<LabelPillProps> = ({
   );
 };
 
-export const OrthodonticOverlayCanvas: React.FC<OrthodonticOverlayProps> = ({
+const OrthodonticOverlayCanvasComponent: React.FC<OrthodonticOverlayProps> = ({
   view,
   guidance,
   showGrid = false,
@@ -1234,3 +1234,5 @@ export const OrthodonticOverlayCanvas: React.FC<OrthodonticOverlayProps> = ({
     </div>
   );
 };
+
+export const OrthodonticOverlayCanvas = React.memo(OrthodonticOverlayCanvasComponent);

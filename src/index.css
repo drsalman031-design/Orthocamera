@@ -92,3 +92,12 @@ html, body, #root {
 .glow-shutter-ready {
   box-shadow: 0 0 45px rgba(16, 185, 129, 0.8), 0 0 15px rgba(52, 211, 153, 0.6), inset 0 0 20px rgba(16, 185, 129, 0.5);
 }
+
+/* Hardware GPU Layer Promotion (Zero-Lag 60fps mobile rendering) */
+.gpu-layer {
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform;
+}

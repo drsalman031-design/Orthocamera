@@ -19,6 +19,7 @@ export interface MotionAnalysisResult {
 
 export class MotionEngine {
   private prevLumaBuffer: Uint8Array | null = null;
+  private currentLumaBuffer: Uint8Array = new Uint8Array(80 * 60);
   private readonly bufferWidth = 80;
   private readonly bufferHeight = 60;
   private readonly staticThreshold = 14; // Below 14 is clinically stable for capture
@@ -47,7 +48,7 @@ export class MotionEngine {
       const frameData = ctx.getImageData(cropX, cropY, cropW, cropH);
       const data = frameData.data;
 
-      const currentLuma = new Uint8Array(this.bufferWidth * this.bufferHeight);
+      const currentLuma = this.currentLumaBuffer;
       const stepX = cropW / this.bufferWidth;
       const stepY = cropH / this.bufferHeight;
 
@@ -80,7 +81,10 @@ export class MotionEngine {
 
       // If no previous frame, initialize and return static
       if (!this.prevLumaBuffer || this.prevLumaBuffer.length !== currentLuma.length) {
-        this.prevLumaBuffer = currentLuma;
+        if (!this.prevLumaBuffer) {
+        this.prevLumaBuffer = new Uint8Array(this.bufferWidth * this.bufferHeight);
+      }
+      this.prevLumaBuffer.set(currentLuma);
         return {
           motionScore: 0,
           isStable: true,
@@ -98,7 +102,10 @@ export class MotionEngine {
       }
 
       // Update buffer
-      this.prevLumaBuffer = currentLuma;
+      if (!this.prevLumaBuffer) {
+        this.prevLumaBuffer = new Uint8Array(this.bufferWidth * this.bufferHeight);
+      }
+      this.prevLumaBuffer.set(currentLuma);
 
       // Normalize diff to a 0-100 scale
       const meanDiff = diffSum / totalPixels;

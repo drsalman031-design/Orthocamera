@@ -38,7 +38,7 @@ interface WorkflowHeaderProps {
   onToggleFaceMesh?: () => void;
 }
 
-export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
+const WorkflowHeaderComponent: React.FC<WorkflowHeaderProps> = ({
   currentView,
   currentIndex,
   totalViews,
@@ -361,3 +361,5 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
     </header>
   );
 };
+
+export const WorkflowHeader = React.memo(WorkflowHeaderComponent);
