@@ -399,8 +399,8 @@ export default function App() {
   const existingViewPhoto = activeCase.photos[currentView.id]?.dataUrl || null;
 
   return (
-    <div className="fixed inset-0 w-screen h-[100dvh] bg-black overflow-hidden font-sans text-white select-none">
-      <main className="relative w-full h-full bg-black overflow-hidden">
+    <div className="fixed inset-0 w-screen h-[100dvh] bg-slate-950 flex flex-col items-center justify-center overflow-hidden font-sans text-white select-none">
+      <main className="relative w-full h-full md:max-w-md md:max-h-[920px] md:h-[94vh] md:rounded-[40px] md:border md:border-slate-800/80 md:shadow-[0_25px_70px_rgba(0,0,0,0.85)] flex flex-col bg-black overflow-hidden">
       {/* ========================================================================= */}
       {/* 1. PRIMARY LAYER: FULL-SCREEN EDGE-TO-EDGE CAMERA PREVIEW               */}
       {/* ========================================================================= */}
@@ -511,7 +511,7 @@ export default function App() {
 
       {/* 800ms Green Confirmation Flash Border for Hands-Free Capture */}
       {flashGreenConfirmation && (
-        <div className="fixed inset-0 z-70 pointer-events-none border-8 border-emerald-400 transition-opacity duration-300 animate-pulse" />
+        <div className="absolute inset-0 z-70 pointer-events-none border-8 border-emerald-400 md:rounded-[40px] transition-opacity duration-300 animate-pulse" />
       )}
 
       {/* ========================================================================= */}
@@ -520,7 +520,7 @@ export default function App() {
 
       {/* Toast Notification: Phone Storage / Gallery Save Confirmation */}
       {galleryToast && (
-        <div className="fixed top-12 left-1/2 -translate-x-1/2 z-80 animate-in fade-in slide-in-from-top duration-300 pointer-events-none">
+        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-80 animate-in fade-in slide-in-from-top duration-300 pointer-events-none w-max max-w-[90%]">
           <div
             className={`border px-4 py-2 rounded-full shadow-[0_0_25px_rgba(16,185,129,0.5)] backdrop-blur-xl flex items-center gap-2.5 text-xs font-medium ${
               galleryToast.message === 'Save Failed'

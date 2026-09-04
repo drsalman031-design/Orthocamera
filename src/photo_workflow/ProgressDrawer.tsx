@@ -112,7 +112,7 @@ export const ProgressDrawer: React.FC<ProgressDrawerProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-80 bg-black/85 backdrop-blur-md flex flex-col justify-end animate-in fade-in duration-200">
+    <div className="absolute inset-0 z-80 bg-black/85 backdrop-blur-md flex flex-col justify-end animate-in fade-in duration-200">
       <div
         className="bg-slate-950 border-t border-slate-800/90 rounded-t-3xl max-h-[85vh] flex flex-col overflow-hidden shadow-[0_-10px_40px_rgba(0,0,0,0.8)] animate-in slide-in-from-bottom duration-250"
         onClick={(e) => e.stopPropagation()}
