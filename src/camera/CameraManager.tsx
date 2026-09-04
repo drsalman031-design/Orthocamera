@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { CameraOff, RefreshCw } from 'lucide-react';
+import { Camera, CameraOff, RefreshCw } from 'lucide-react';
 import { CapturedPhoto, LiveGuidanceState, OrthodonticViewDefinition, QualityCheckResult } from '../types';
 import { FaceAnalysisResult, OnDeviceFaceAnalyzer } from '../ai_positioning/FaceAnalyzer';
 import { IntraoralAnalysisResult, OnDeviceIntraoralAnalyzer } from '../ai_positioning/IntraoralAnalyzer';
@@ -153,6 +153,11 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
     height: 1080,
   });
 
+  // Multiple Camera Device Management (DroidCam, external USB, native lenses)
+  const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+  const [activeDeviceLabel, setActiveDeviceLabel] = useState<string>('');
+
   // Telemetry references
   const fpsFrameCountRef = useRef<number>(0);
   const lastFpsCalcTimeRef = useRef<number>(performance.now());
@@ -189,9 +194,9 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
     videoTrackRef.current = null;
   }, []);
 
-  // Multi-Stage, High-Resilient Camera Hardware Initialization
+  // Multi-Stage, High-Resilient Camera Hardware Initialization (Prioritizes DroidCam)
   const initHardwareCamera = useCallback(
-    async (targetFacing: 'environment' | 'user' = facingMode) => {
+    async (targetFacing: 'environment' | 'user' = facingMode, specificDeviceId?: string | null) => {
       const requestId = ++activeRequestIdRef.current;
       setIsInitializing(true);
       setCameraError(null);
@@ -215,9 +220,52 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
         return;
       }
 
-      // Resilient Constraint Cascade without restrictive 'min' bounds - Opens directly
-      const constraintTiers: MediaStreamConstraints[] = [
-        // 1. High-resolution preferred with requested facing mode
+      // Enumerate available camera devices early to identify DroidCam
+      let videoDevices: MediaDeviceInfo[] = [];
+      try {
+        const allDevices = await navigator.mediaDevices.enumerateDevices();
+        videoDevices = allDevices.filter((d) => d.kind === 'videoinput');
+        if (videoDevices.length > 0) {
+          setAvailableCameras(videoDevices);
+        }
+      } catch (enumErr) {
+        console.debug('Error enumerating devices:', enumErr);
+      }
+
+      // Automatically search for DroidCam video source
+      const droidCamDevice = videoDevices.find((d) =>
+        /droid|phone|source\s*2/i.test(d.label)
+      );
+
+      const targetDeviceId =
+        specificDeviceId !== undefined
+          ? specificDeviceId
+          : (selectedDeviceId || (droidCamDevice ? droidCamDevice.deviceId : null));
+
+      const constraintTiers: MediaStreamConstraints[] = [];
+
+      // 1. If DroidCam or a specific camera was targeted, prioritize it with 1080p
+      if (targetDeviceId) {
+        constraintTiers.push(
+          {
+            video: {
+              deviceId: { exact: targetDeviceId },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+            },
+            audio: false,
+          },
+          {
+            video: {
+              deviceId: { exact: targetDeviceId },
+            },
+            audio: false,
+          }
+        );
+      }
+
+      // 2. High-resolution preferred with requested facing mode
+      constraintTiers.push(
         {
           video: {
             facingMode: { ideal: targetFacing },
@@ -226,7 +274,7 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
           },
           audio: false,
         },
-        // 2. Standard 720p with requested facing mode
+        // 3. Standard 720p with requested facing mode
         {
           video: {
             facingMode: { ideal: targetFacing },
@@ -235,26 +283,26 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
           },
           audio: false,
         },
-        // 3. Any resolution with requested facing mode
+        // 4. Any resolution with requested facing mode
         {
           video: {
             facingMode: { ideal: targetFacing },
           },
           audio: false,
         },
-        // 4. Alternate facing mode (crucial for desktop/laptop webcams lacking 'environment' rear camera)
+        // 5. Alternate facing mode (crucial for desktop/laptop webcams lacking 'environment' rear camera)
         {
           video: {
             facingMode: { ideal: targetFacing === 'environment' ? 'user' : 'environment' },
           },
           audio: false,
         },
-        // 5. Bare minimum video constraint: ANY available camera
+        // 6. Bare minimum video constraint: ANY available camera
         {
           video: true,
           audio: false,
-        },
-      ];
+        }
+      );
 
       let acquiredStream: MediaStream | null = null;
       let lastErr: unknown = null;
@@ -313,6 +361,22 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
         streamRef.current = acquiredStream;
         const track = acquiredStream.getVideoTracks()[0];
         videoTrackRef.current = track;
+
+        // Track active camera device label
+        const trackLabel = track.label || '';
+        setActiveDeviceLabel(trackLabel);
+
+        // Update list of cameras now that permission is active
+        try {
+          navigator.mediaDevices.enumerateDevices().then((devs) => {
+            const vInputs = devs.filter((d) => d.kind === 'videoinput');
+            if (vInputs.length > 0) {
+              setAvailableCameras(vInputs);
+            }
+          }).catch(() => {});
+        } catch {
+          // ignore
+        }
 
         // Query hardware capabilities
         if (track.getCapabilities) {
@@ -397,8 +461,25 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
         setCameraError(msg);
       }
     },
-    [facingMode, onFacingModeChange, stopCurrentStream]
+    [facingMode, onFacingModeChange, stopCurrentStream, selectedDeviceId]
   );
+
+  // Switch / Cycle between all available camera devices (e.g. DroidCam <-> Built-in Webcam)
+  const handleCycleCamera = useCallback(() => {
+    if (availableCameras.length > 1) {
+      const currentIdx = availableCameras.findIndex(
+        (c) => c.deviceId === selectedDeviceId || (c.label && c.label === activeDeviceLabel)
+      );
+      const nextIdx = (currentIdx + 1) % availableCameras.length;
+      const nextDevice = availableCameras[nextIdx];
+      setSelectedDeviceId(nextDevice.deviceId);
+      initHardwareCamera(facingMode, nextDevice.deviceId);
+    } else {
+      const nextFacing = facingMode === 'environment' ? 'user' : 'environment';
+      if (onFacingModeChange) onFacingModeChange(nextFacing);
+      initHardwareCamera(nextFacing, null);
+    }
+  }, [availableCameras, selectedDeviceId, activeDeviceLabel, facingMode, initHardwareCamera, onFacingModeChange]);
 
   // Initialize hardware camera on mount or mode change
   useEffect(() => {
@@ -830,7 +911,32 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
         }}
       />
 
+      {/* 2. DroidCam Status Indicator & Camera Source Switcher */}
+      <div className="absolute top-28 left-4 right-4 z-25 flex items-center justify-between pointer-events-none">
+        {/droid|phone|source\s*2/i.test(activeDeviceLabel) ? (
+          <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-950/85 border border-emerald-400/50 rounded-full text-emerald-300 text-[11px] font-mono shadow-xl backdrop-blur-md animate-fade-in pointer-events-auto">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
+            <span className="font-semibold tracking-wide">DroidCam Connected ✓</span>
+          </div>
+        ) : (
+          <div />
+        )}
 
+        {availableCameras.length > 1 && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCycleCamera();
+            }}
+            className="flex items-center gap-1.5 px-3 py-1 bg-black/75 hover:bg-black/90 active:scale-95 border border-white/20 hover:border-cyan-400 rounded-full text-white text-[11px] font-mono shadow-xl backdrop-blur-md cursor-pointer transition-all pointer-events-auto"
+            title="Click to toggle between available cameras (e.g. DroidCam vs Laptop Webcam)"
+          >
+            <Camera className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="max-w-[130px] truncate">{activeDeviceLabel || 'Switch Camera'}</span>
+          </button>
+        )}
+      </div>
 
       {/* 3. Tap-to-Focus Reticle Indicator */}
       {focusPoint && (

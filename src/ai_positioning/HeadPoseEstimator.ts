@@ -121,6 +121,19 @@ export function extractRotationMatrix3x3(matrix: Matrix4x4): number[][] | null {
     r20 = d[8];  r21 = d[9];  r22 = d[10];
   }
 
+  // Normalize column vectors to eliminate scaling factor from MediaPipe affine matrix
+  const col0Len = Math.hypot(r00, r10, r20);
+  const col1Len = Math.hypot(r01, r11, r21);
+  const col2Len = Math.hypot(r02, r12, r22);
+
+  if (col0Len < 1e-4 || col1Len < 1e-4 || col2Len < 1e-4) {
+    return null;
+  }
+
+  r00 /= col0Len; r10 /= col0Len; r20 /= col0Len;
+  r01 /= col1Len; r11 /= col1Len; r21 /= col1Len;
+  r02 /= col2Len; r12 /= col2Len; r22 /= col2Len;
+
   // Check orthogonality: determinant of 3x3 matrix should be close to 1
   const det =
     r00 * (r11 * r22 - r12 * r21) -

@@ -94,23 +94,23 @@ export class ClinicalAlignmentEngine {
       pitchToleranceDeg: sensitivity === 'high' ? 5 : sensitivity === 'relaxed' ? 10 : 7,
       targetRollDeg: 0,
       rollToleranceDeg: sensitivity === 'high' ? 3 : sensitivity === 'relaxed' ? 7 : 5,
-      minFaceHeightRatio: sensitivity === 'relaxed' ? 0.28 : sensitivity === 'high' ? 0.38 : 0.32,
-      maxFaceHeightRatio: sensitivity === 'relaxed' ? 0.80 : sensitivity === 'high' ? 0.68 : 0.75,
-      centerToleranceX: sensitivity === 'high' ? 0.10 : sensitivity === 'relaxed' ? 0.20 : 0.15,
-      centerToleranceY: sensitivity === 'high' ? 0.10 : sensitivity === 'relaxed' ? 0.20 : 0.15,
-      minLandmarkConfidence: 0.5,
-      minPoseConfidence: 0.5,
+      minFaceHeightRatio: sensitivity === 'relaxed' ? 0.18 : sensitivity === 'high' ? 0.28 : 0.22,
+      maxFaceHeightRatio: sensitivity === 'relaxed' ? 0.88 : sensitivity === 'high' ? 0.72 : 0.82,
+      centerToleranceX: sensitivity === 'high' ? 0.12 : sensitivity === 'relaxed' ? 0.22 : 0.18,
+      centerToleranceY: sensitivity === 'high' ? 0.12 : sensitivity === 'relaxed' ? 0.22 : 0.18,
+      minLandmarkConfidence: 0.45,
+      minPoseConfidence: 0.45,
       stableDurationMs: 600,
       requiresSmile:
         currentView.id === 'FRONTAL_SMILE' ||
         currentView.id === 'RIGHT_OBLIQUE' ||
         currentView.id === 'LEFT_OBLIQUE',
-      minSmileScore: 0.28,
+      minSmileScore: 0.25,
       requiresFaceLandmarks: true,
     };
 
     // Fail-closed baseline when face is not detected
-    if (!faceResult || !faceResult.detected || faceResult.confidence < 0.3) {
+    if (!faceResult || !faceResult.detected || faceResult.confidence < 0.25) {
       return {
         detected: false,
         alignmentScore: 0,
@@ -145,25 +145,33 @@ export class ClinicalAlignmentEngine {
 
     // 1. Strict MediaPipe Engine Gating
     const isMediaPipe = faceResult.aiEngine === 'mediapipe';
+    const isProfileView = currentView.id === 'RIGHT_PROFILE' || currentView.id === 'LEFT_PROFILE';
 
-    // 2. Complete Anatomical Landmark Check
-    const hasRequiredPoints = !!(
-      faceResult.landmarks &&
-      faceResult.landmarks.leftEye &&
-      faceResult.landmarks.rightEye &&
-      faceResult.landmarks.noseTip &&
-      faceResult.landmarks.mouthCenter &&
-      faceResult.landmarks.chinTip
-    );
+    // 2. Anatomical Landmark Check (profile views naturally occlude contralateral eye)
+    const hasRequiredPoints = isProfileView
+      ? !!(
+          faceResult.landmarks &&
+          (faceResult.landmarks.leftEye || faceResult.landmarks.rightEye) &&
+          faceResult.landmarks.noseTip &&
+          faceResult.landmarks.chinTip
+        )
+      : !!(
+          faceResult.landmarks &&
+          faceResult.landmarks.leftEye &&
+          faceResult.landmarks.rightEye &&
+          faceResult.landmarks.noseTip &&
+          faceResult.landmarks.mouthCenter &&
+          faceResult.landmarks.chinTip
+        );
 
     const lq = faceResult.landmarkQuality;
     const landmarksValid =
       isMediaPipe &&
       !!lq &&
       lq.available &&
-      lq.requiredLandmarksPresent &&
+      (isProfileView || lq.requiredLandmarksPresent) &&
       hasRequiredPoints &&
-      lq.confidence >= spec.minLandmarkConfidence;
+      lq.confidence >= (isProfileView ? 0.35 : spec.minLandmarkConfidence);
 
     // 3. Head Pose Extraction Validation
     const pose = faceResult.pose;
@@ -211,28 +219,20 @@ export class ClinicalAlignmentEngine {
       rollErrorDeg <= spec.rollToleranceDeg;
 
     // Lateral Profile View Specific Enforcements
-    const isProfileView = currentView.id === 'RIGHT_PROFILE' || currentView.id === 'LEFT_PROFILE';
     if (isProfileView) {
-      if (currentView.id === 'RIGHT_PROFILE') {
-        // Must be positive yaw between 82° and 98°
-        if (yaw < 82 || yaw > 98) {
-          angleValid = false;
-        }
-      } else {
-        // Left profile: must be negative yaw between -98° and -82°
-        if (yaw > -82 || yaw < -98) {
-          angleValid = false;
-        }
-      }
-
-      // Roll must be strictly level (<= 6°)
-      if (Math.abs(roll) > 6) {
-        angleValid = false;
-      }
-
-      // Profile state integration: fail closed if tracking dropped or ineligible
       if (profileState) {
-        if (!profileState.isCaptureEligible || !profileState.isProfileAligned) {
+        angleValid = profileState.isProfileAligned;
+      } else {
+        if (currentView.id === 'RIGHT_PROFILE') {
+          if (yaw < 68 || yaw > 100) {
+            angleValid = false;
+          }
+        } else {
+          if (yaw > -68 || yaw < -100) {
+            angleValid = false;
+          }
+        }
+        if (Math.abs(roll) > 8) {
           angleValid = false;
         }
       }
@@ -241,16 +241,16 @@ export class ClinicalAlignmentEngine {
     // 7. Expression Validation (Smile condition)
     let expressionValid = true;
     if (spec.requiresSmile) {
-      const minSmile = spec.minSmileScore ?? 0.28;
+      const minSmile = spec.minSmileScore ?? 0.25;
       if (faceResult.smileScore < minSmile) {
         expressionValid = false;
       }
     }
 
     // 8. Quality & Stability
-    const exposureValid = rawLuminance >= 60 && rawLuminance <= 220;
-    const sharpnessValid = rawSharpness >= 45;
-    const stabilityValid = isStable && motionScore < 18;
+    const exposureValid = rawLuminance >= 35 && rawLuminance <= 240;
+    const sharpnessValid = rawSharpness >= 18;
+    const stabilityValid = isStable && motionScore < 22;
 
     // --- CONTINUOUS ALIGNMENT SCORE CALCULATION (0 - 100) ---
     const centerNorm = Math.hypot(centerErrorX, centerErrorY) / spec.centerToleranceX;

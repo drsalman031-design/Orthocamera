@@ -45,21 +45,21 @@ export class OverlayGuidanceEngine {
       pitchToleranceDeg: sensitivity === 'high' ? 5 : sensitivity === 'relaxed' ? 10 : 7,
       targetRollDeg: 0,
       rollToleranceDeg: sensitivity === 'high' ? 3 : sensitivity === 'relaxed' ? 7 : 5,
-      minFaceHeightRatio: sensitivity === 'relaxed' ? 0.28 : sensitivity === 'high' ? 0.38 : 0.32,
-      maxFaceHeightRatio: sensitivity === 'relaxed' ? 0.80 : sensitivity === 'high' ? 0.68 : 0.75,
-      centerToleranceX: sensitivity === 'high' ? 0.10 : sensitivity === 'relaxed' ? 0.20 : 0.15,
-      centerToleranceY: sensitivity === 'high' ? 0.10 : sensitivity === 'relaxed' ? 0.20 : 0.15,
-      minLandmarkConfidence: 0.5,
-      minPoseConfidence: 0.5,
+      minFaceHeightRatio: sensitivity === 'relaxed' ? 0.18 : sensitivity === 'high' ? 0.28 : 0.22,
+      maxFaceHeightRatio: sensitivity === 'relaxed' ? 0.88 : sensitivity === 'high' ? 0.72 : 0.82,
+      centerToleranceX: sensitivity === 'high' ? 0.12 : sensitivity === 'relaxed' ? 0.22 : 0.18,
+      centerToleranceY: sensitivity === 'high' ? 0.12 : sensitivity === 'relaxed' ? 0.22 : 0.18,
+      minLandmarkConfidence: 0.45,
+      minPoseConfidence: 0.45,
       stableDurationMs: 600,
       requiresSmile: view.id === 'FRONTAL_SMILE' || view.id === 'RIGHT_OBLIQUE' || view.id === 'LEFT_OBLIQUE',
-      minSmileScore: 0.28,
+      minSmileScore: 0.25,
       requiresFaceLandmarks: view.category === 'extraoral',
     };
 
-    const exposureValid = rawLuminance >= 60 && rawLuminance <= 220;
-    const sharpnessValid = rawSharpness >= 45;
-    const temporalStabilityValid = isStable && motionScore < 18;
+    const exposureValid = rawLuminance >= 35 && rawLuminance <= 240;
+    const sharpnessValid = rawSharpness >= 18;
+    const temporalStabilityValid = isStable && motionScore < 22;
 
     const temporalStability: TemporalStability = {
       stable: temporalStabilityValid,

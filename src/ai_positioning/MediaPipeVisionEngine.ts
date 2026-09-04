@@ -46,6 +46,7 @@ class MediaPipeVisionEngineSingleton {
   };
   private statusListeners: Array<(status: MediaPipeStatus) => void> = [];
   private lastInferenceTime = 0;
+  private lastValidResultTime = 0;
   private isProcessingFrame = false;
   private lastResult: FaceAnalysisResult | null = null;
 
@@ -199,13 +200,13 @@ class MediaPipeVisionEngineSingleton {
       return this.lastResult;
     }
 
-    // Rate-limit inference to ~12 fps (80ms) to ensure phone stays responsive and video never sticks
-    if (timestampMs - this.lastInferenceTime < 80) {
+    // Guard against re-entrant calls within 40ms; CameraManager regulates main ~80ms cadence
+    if (timestampMs - this.lastInferenceTime < 40) {
       return this.lastResult;
     }
 
     // MediaPipe requires strictly monotonically increasing timestamp
-    const safeTimestamp = Math.max(timestampMs, this.lastInferenceTime + 1);
+    const safeTimestamp = Math.max(Math.round(timestampMs), this.lastInferenceTime + 1);
     this.lastInferenceTime = safeTimestamp;
     this.isProcessingFrame = true;
 
@@ -213,15 +214,30 @@ class MediaPipeVisionEngineSingleton {
       const results = this.faceLandmarker.detectForVideo(videoOrCanvas, safeTimestamp);
 
       if (!results || !results.faceLandmarks || results.faceLandmarks.length === 0) {
+        // Temporal smoothing: preserve last stable detection for up to 300ms across blinks/micro-jitters
+        if (this.lastResult && timestampMs - this.lastValidResultTime <= 300) {
+          return {
+            ...this.lastResult,
+            confidence: Math.max(0.2, this.lastResult.confidence * 0.9),
+          };
+        }
         this.lastResult = null;
         return null;
       }
 
       const landmarks = results.faceLandmarks[0];
       if (!landmarks || landmarks.length < 468) {
+        if (this.lastResult && timestampMs - this.lastValidResultTime <= 300) {
+          return {
+            ...this.lastResult,
+            confidence: Math.max(0.2, this.lastResult.confidence * 0.9),
+          };
+        }
         this.lastResult = null;
         return null;
       }
+
+      this.lastValidResultTime = timestampMs;
 
       // Calculate Bounding Box
       let minX = 1;

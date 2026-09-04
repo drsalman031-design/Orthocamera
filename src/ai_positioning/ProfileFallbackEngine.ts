@@ -38,9 +38,9 @@ export class ProfileFallbackEngine {
     currentResult: FaceAnalysisResult | null,
     timestamp: number = Date.now()
   ): ProfileStateResult {
-    const minProfileYaw = 82; // Strictly 82° to 98° required for 90° lateral profile
-    const maxProfileYaw = 98;
-    const maxRoll = 6;
+    const minProfileYaw = 75; // Clinically calibrated 75° to 100° for lateral profile (rejects 70° oblique)
+    const maxProfileYaw = 100;
+    const maxRoll = 8;
 
     if (currentResult && currentResult.detected && currentResult.confidence >= 0.35) {
       const currentYaw = currentResult.yawDeg;
