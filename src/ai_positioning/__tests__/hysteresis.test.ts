@@ -74,4 +74,26 @@ describe('HysteresisController - Stability & Persistence', () => {
     expect(dropUpdate.stage).toBe('ALIGNING');
     expect(dropUpdate.shouldTriggerCapture).toBe(false);
   });
+
+  it('completes auto-capture sequence in ~1000ms under default clinical settings', () => {
+    const controller = new HysteresisController(); // default 250ms candidate persistence, 0.75s countdown
+    let t = 10000;
+
+    // t=0: Alignment valid
+    let update = controller.update(readySpec, true, true, true, true, t);
+    expect(update.stage).toBe('CANDIDATE_READY');
+    expect(update.shouldTriggerCapture).toBe(false);
+
+    // t=250ms: Candidate persistence satisfied -> enters COUNTDOWN
+    t += 250;
+    update = controller.update(readySpec, true, true, true, true, t);
+    expect(update.stage).toBe('COUNTDOWN');
+    expect(update.shouldTriggerCapture).toBe(false);
+
+    // t=250 + 750 = 1000ms total: Countdown finishes -> CAPTURED
+    t += 750;
+    update = controller.update(readySpec, true, true, true, true, t);
+    expect(update.stage).toBe('CAPTURED');
+    expect(update.shouldTriggerCapture).toBe(true);
+  });
 });

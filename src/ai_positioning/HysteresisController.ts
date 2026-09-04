@@ -1,4 +1,5 @@
 import { CaptureReadiness } from '../types';
+import { CapturePerformanceTracker } from '../telemetry/CapturePerformanceTracker';
 
 export type GuidanceStateStage =
   | 'SEARCHING'
@@ -13,9 +14,9 @@ export type GuidanceStateStage =
 export interface HysteresisConfig {
   enterReadyScore: number; // 85
   exitReadyScore: number; // 70
-  candidatePersistenceMs: number; // 600ms stable in CANDIDATE_READY before READY
-  temporaryLossGraceMs: number; // 300ms grace period before dropping from READY
-  cooldownPeriodMs: number; // 1500ms lockout after capture
+  candidatePersistenceMs: number; // 250-350ms stable in CANDIDATE_READY before READY
+  temporaryLossGraceMs: number; // 200ms grace period before dropping from READY
+  cooldownPeriodMs: number; // 700ms lockout after capture
 }
 
 export interface ControllerStateUpdate {
@@ -33,21 +34,21 @@ export class HysteresisController {
   private lastCaptureTime: number = 0;
   private countdownValue: number | null = null;
   private countdownStartTime: number | null = null;
-  private countdownDurationSec: number = 2;
+  private countdownDurationSec: number = 0.75;
 
   constructor(customConfig?: Partial<HysteresisConfig>) {
     this.config = {
       enterReadyScore: 85,
       exitReadyScore: 70,
-      candidatePersistenceMs: 600,
-      temporaryLossGraceMs: 300,
-      cooldownPeriodMs: 1500,
+      candidatePersistenceMs: 250,
+      temporaryLossGraceMs: 200,
+      cooldownPeriodMs: 700,
       ...customConfig,
     };
   }
 
   public setCountdownDuration(seconds: number) {
-    this.countdownDurationSec = Math.max(1, Math.min(5, seconds));
+    this.countdownDurationSec = Math.max(0.5, Math.min(5, seconds));
   }
 
   /**
@@ -109,10 +110,13 @@ export class HysteresisController {
         if (passesEntry) {
           this.currentStage = 'CANDIDATE_READY';
           this.candidateStartTime = timestamp;
+          CapturePerformanceTracker.recordAlignmentValid(timestamp);
         } else if (rawScore > 35) {
           this.currentStage = 'ALIGNING';
+          CapturePerformanceTracker.resetAlignmentValid();
         } else {
           this.currentStage = 'SEARCHING';
+          CapturePerformanceTracker.resetAlignmentValid();
         }
         break;
 
@@ -120,6 +124,7 @@ export class HysteresisController {
         if (!passesExit) {
           this.currentStage = 'ALIGNING';
           this.candidateStartTime = null;
+          CapturePerformanceTracker.resetAlignmentValid();
         } else if (
           this.candidateStartTime &&
           timestamp - this.candidateStartTime >= this.config.candidatePersistenceMs
@@ -127,10 +132,13 @@ export class HysteresisController {
           // Stable long enough -> Enter READY
           this.currentStage = 'READY';
           this.lastValidReadyTime = timestamp;
+          CapturePerformanceTracker.recordCandidateReady(timestamp);
+
           if (autoCaptureEnabled) {
             this.currentStage = 'COUNTDOWN';
             this.countdownStartTime = timestamp;
-            this.countdownValue = this.countdownDurationSec;
+            this.countdownValue = Math.max(1, Math.ceil(this.countdownDurationSec));
+            CapturePerformanceTracker.recordCountdownStarted(timestamp);
           }
         }
         break;
@@ -141,11 +149,13 @@ export class HysteresisController {
           if (autoCaptureEnabled) {
             this.currentStage = 'COUNTDOWN';
             this.countdownStartTime = timestamp;
-            this.countdownValue = this.countdownDurationSec;
+            this.countdownValue = Math.max(1, Math.ceil(this.countdownDurationSec));
+            CapturePerformanceTracker.recordCountdownStarted(timestamp);
           }
         } else if (timestamp - this.lastValidReadyTime > this.config.temporaryLossGraceMs) {
           // Grace period expired
           this.currentStage = 'ALIGNING';
+          CapturePerformanceTracker.resetAlignmentValid();
         }
         break;
 
@@ -155,6 +165,7 @@ export class HysteresisController {
           this.currentStage = 'ALIGNING';
           this.countdownValue = null;
           this.countdownStartTime = null;
+          CapturePerformanceTracker.resetAlignmentValid();
           break;
         }
 
@@ -169,14 +180,15 @@ export class HysteresisController {
           if (this.countdownStartTime) {
             const elapsed = (timestamp - this.countdownStartTime) / 1000;
             const remaining = Math.max(0, Math.ceil(this.countdownDurationSec - elapsed));
-            this.countdownValue = remaining;
+            this.countdownValue = remaining > 0 ? remaining : 1;
 
-            if (remaining <= 0) {
+            if (elapsed >= this.countdownDurationSec) {
               // Trigger capture!
               this.currentStage = 'CAPTURED';
               this.lastCaptureTime = timestamp;
               this.countdownValue = null;
               this.countdownStartTime = null;
+              CapturePerformanceTracker.recordCaptureTriggered(timestamp);
 
               return {
                 stage: 'CAPTURED',
@@ -191,6 +203,7 @@ export class HysteresisController {
           this.currentStage = 'ALIGNING';
           this.countdownValue = null;
           this.countdownStartTime = null;
+          CapturePerformanceTracker.resetAlignmentValid();
         }
         break;
 
@@ -205,6 +218,7 @@ export class HysteresisController {
           this.currentStage = 'ALIGNING';
           this.countdownValue = null;
           this.countdownStartTime = null;
+          CapturePerformanceTracker.resetAlignmentValid();
         }
         break;
     }

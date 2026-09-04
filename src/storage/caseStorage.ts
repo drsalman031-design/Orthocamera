@@ -110,18 +110,19 @@ export class CaseStorage {
   }
 
   public static createDefaultCase(): ClinicalCase {
-    const caseId = `CASE_${new Date().getFullYear()}_${Math.floor(1000 + Math.random() * 9000)}`;
-    const patientId = `PT-${Math.floor(10000 + Math.random() * 90000)}`;
+    const today = new Date().toISOString().split('T')[0];
+    const seq = String(Math.floor(1 + Math.random() * 999)).padStart(3, '0');
+    const patientId = `REC-${today}-${seq}`;
 
     return {
       id: `case_${Date.now()}`,
       patientId,
-      patientName: 'Jane Doe',
-      date: new Date().toISOString().split('T')[0],
-      operator: 'Dr. Orthodontist',
-      clinicName: 'Orthodontic Clinic',
+      patientName: '',
+      date: today,
+      operator: '',
+      clinicName: '',
       caseType: 'INITIAL',
-      notes: 'Standardized pre-treatment orthodontic clinical photo records.',
+      notes: '',
       photos: {},
       createdAt: Date.now(),
       updatedAt: Date.now(),

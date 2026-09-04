@@ -21,7 +21,8 @@ import { AndroidGuideModal } from './components/AndroidGuideModal';
 import { GhostOverlayManager } from './overlay/GhostOverlayManager';
 import { DiagnosticsHUD } from './components/DiagnosticsHUD';
 import { HysteresisController } from './ai_positioning/HysteresisController';
-import { Check, AlertCircle } from 'lucide-react';
+import { CapturePerformanceTracker } from './telemetry/CapturePerformanceTracker';
+import { Check, AlertCircle, Camera } from 'lucide-react';
 
 const DEFAULT_SETTINGS: AppSettings = {
   autoCaptureEnabled: true,
@@ -100,6 +101,10 @@ export default function App() {
   // Toast notification for phone gallery saving
   const [galleryToast, setGalleryToast] = useState<{ message: string; filename: string; fileUrl?: string } | null>(null);
 
+  // Launch & Initialization Splash
+  const [isInitializing, setIsInitializing] = useState<boolean>(true);
+  const [initStage, setInitStage] = useState<string>('Initializing camera...');
+
   // Auto-Capture Countdown State & Hysteresis
   const [autoCaptureCountdown, setAutoCaptureCountdown] = useState<number | null>(null);
   const [autoCaptureTrigger, setAutoCaptureTrigger] = useState<boolean>(false);
@@ -119,13 +124,31 @@ export default function App() {
     isHardwareZoom: false,
   });
 
-  // Load persistent IndexedDB on startup
+  // Load persistent IndexedDB on startup with clean professional splash
   useEffect(() => {
+    const t1 = setTimeout(() => {
+      setInitStage('Loading AI alignment engine...');
+    }, 350);
+
+    const t2 = setTimeout(() => {
+      setInitStage('Ready');
+    }, 750);
+
+    const t3 = setTimeout(() => {
+      setIsInitializing(false);
+    }, 1000);
+
     CaseStorage.init().then(() => {
       CaseStorage.loadLatestCase().then((saved) => {
         if (saved) setActiveCase(saved);
       });
     });
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
   }, []);
 
   // Update Hysteresis Controller delay when setting changes
@@ -218,48 +241,15 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Trigger Manual Shutter (Fail-Closed gate unless allowManualCaptureOverride is enabled)
+  // Trigger Manual Shutter (Never blocked: clinician manual capture always triggers immediately)
   const triggerManualCapture = () => {
-    const isReady = guidance.isReady || guidance.readiness?.ready;
-    if (!isReady && !settings.allowManualCaptureOverride) {
-      if (settings.hapticFeedback && typeof navigator !== 'undefined' && navigator.vibrate) {
-        navigator.vibrate([80, 50, 80]);
-      }
-      setGalleryToast({
-        message: 'Alignment Incomplete',
-        filename: guidance.primaryMessage || 'Align patient with guide before capturing',
-      });
-      setTimeout(() => setGalleryToast(null), 2500);
-      return;
-    }
     setAutoCaptureTrigger(true);
   };
 
-  // When Photo is Captured: Direct Save to Phone Storage / Gallery (No Zip, No in-app save needed)
+  // When Photo is Captured: Direct Save to Phone Storage / Gallery / IndexedDB
   const handlePhotoCaptured = useCallback(
     (photo: CapturedPhoto) => {
-      // 1. Immediately save directly to phone storage & camera gallery
-      GalleryStorage.savePhotoToGallery(photo, activeCase, currentView).then((saveRes) => {
-        if (saveRes.success && saveRes.method === 'gallery') {
-          setGalleryToast({
-            message: 'Saved to Gallery',
-            filename: `${saveRes.filename} (Pictures/Orthocamera)`,
-          });
-        } else if (saveRes.success && saveRes.method === 'downloads') {
-          setGalleryToast({
-            message: 'Saved to Downloads',
-            filename: saveRes.filename,
-          });
-        } else {
-          setGalleryToast({
-            message: 'Save Failed',
-            filename: saveRes.error || saveRes.filename,
-          });
-        }
-        setTimeout(() => setGalleryToast(null), 3500);
-      });
-
-      // Keep in-memory for live progress rail and recent thumbnail
+      // 1. Immediately persist photo to active case in state and IndexedDB storage
       const updatedPhotos = {
         ...activeCase.photos,
         [photo.viewId]: photo,
@@ -270,9 +260,12 @@ export default function App() {
         updatedAt: Date.now(),
       };
       setActiveCase(updatedCase);
+      CaseStorage.saveCase(updatedCase);
 
-      // 2. Audio & Haptic confirmation feedback
+      // 2. Immediate audio & haptic confirmation feedback
       playCaptureChime();
+      CapturePerformanceTracker.recordCaptureFeedback();
+
       if (settings.hapticFeedback && typeof navigator !== 'undefined' && navigator.vibrate) {
         navigator.vibrate([40, 60, 40]);
       }
@@ -281,16 +274,49 @@ export default function App() {
       setFlashGreenConfirmation(true);
       setTimeout(() => setFlashGreenConfirmation(false), 800);
 
-      // 4. Hands-Free Auto Advance Workflow (Advance to next view, no zip modal)
+      // 4. Save to phone gallery ONLY if autoSaveToGallery is enabled
+      if (settings.autoSaveToGallery) {
+        GalleryStorage.savePhotoToGallery(photo, activeCase, currentView).then((saveRes) => {
+          CapturePerformanceTracker.recordGallerySaveCompleted();
+          if (saveRes.success && saveRes.method === 'gallery') {
+            setGalleryToast({
+              message: 'Saved to Gallery',
+              filename: `${saveRes.filename} (Pictures/Orthocamera)`,
+            });
+          } else if (saveRes.success && saveRes.method === 'downloads') {
+            setGalleryToast({
+              message: 'Saved to Downloads',
+              filename: saveRes.filename,
+            });
+          } else {
+            setGalleryToast({
+              message: 'Save Failed',
+              filename: saveRes.error || saveRes.filename,
+            });
+          }
+          setTimeout(() => setGalleryToast(null), 3500);
+        });
+      } else {
+        CapturePerformanceTracker.recordGallerySaveCompleted();
+        setGalleryToast({
+          message: 'Photo Captured',
+          filename: `Stored in Case Record (${currentView.name})`,
+        });
+        setTimeout(() => setGalleryToast(null), 2500);
+      }
+
+      // 5. Hands-Free Auto Advance Workflow (Advance to next view, no zip modal)
       if (settings.handsFreeAutoAdvance) {
         const totalViews = ORTHODONTIC_VIEWS.length;
         if (currentViewIndex < totalViews - 1) {
           setCurrentViewIndex(currentViewIndex + 1);
         } else {
-          // All 11 photos complete: celebrate direct gallery save
+          // All 11 photos complete
           setGalleryToast({
-            message: 'All 11 Photos Saved to Phone Gallery!',
-            filename: 'Complete set in your device Photos/Gallery',
+            message: 'All 11 Photos Captured!',
+            filename: settings.autoSaveToGallery
+              ? 'Complete set in Pictures/Orthocamera'
+              : 'Complete set saved in case record',
           });
           setTimeout(() => setGalleryToast(null), 5000);
         }
@@ -303,6 +329,7 @@ export default function App() {
       currentView,
       currentViewIndex,
       playCaptureChime,
+      settings.autoSaveToGallery,
       settings.handsFreeAutoAdvance,
       settings.hapticFeedback,
     ]
@@ -628,6 +655,25 @@ export default function App() {
         isOpen={isAndroidDocsOpen}
         onClose={() => setIsAndroidDocsOpen(false)}
       />
+
+      {/* Professional Clinical Launch Splash */}
+      {isInitializing && (
+        <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300 pointer-events-auto">
+          <div className="w-16 h-16 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mb-6 shadow-[0_0_35px_rgba(6,182,212,0.25)]">
+            <Camera className="w-8 h-8 text-cyan-400 animate-pulse" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-widest text-white mb-1.5 font-sans">
+            ORTHOCAMERA
+          </h1>
+          <p className="text-xs text-slate-400 font-medium tracking-wider uppercase mb-8">
+            Orthodontic Clinical Photography System
+          </p>
+          <div className="flex items-center gap-2.5 px-4 py-2 rounded-full bg-slate-900/90 border border-slate-800 text-xs font-mono text-cyan-300 shadow-xl">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+            <span>{initStage}</span>
+          </div>
+        </div>
+      )}
     </main>
     </div>
   );

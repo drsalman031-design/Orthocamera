@@ -83,9 +83,8 @@ export const PatientInfoModal: React.FC<PatientInfoModalProps> = ({
               type="text"
               value={formData.patientName}
               onChange={(e) => setFormData({ ...formData, patientName: e.target.value })}
-              required
               className="w-full px-3.5 py-2.5 bg-slate-900/90 border border-slate-700/70 rounded-xl text-white focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/50 transition-all"
-              placeholder="Jane Doe"
+              placeholder="e.g. Patient Full Name"
             />
           </div>
 

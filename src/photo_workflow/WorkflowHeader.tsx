@@ -43,25 +43,47 @@ const WorkflowHeaderComponent: React.FC<WorkflowHeaderProps> = ({
 
   return (
     <header className="absolute top-0 left-0 right-0 z-50 pt-safe flex flex-col pointer-events-auto select-none bg-gradient-to-b from-black/90 via-black/70 to-transparent pb-3">
-      {/* 1. TOP BAR: Patient Profile Capsule + Step Counter */}
+      {/* 1. TOP BAR: Branding, Patient Profile Capsule, AI Status, Step Counter */}
       <div className="px-3.5 pt-2 flex items-center justify-between gap-2">
-        {/* Patient Capsule */}
+        {/* Patient / Record Capsule */}
         <button
           onClick={onOpenPatientModal}
           className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl shadow-lg active:scale-95 hover:border-cyan-500/60 transition-all text-left cursor-pointer"
           aria-label="Patient details"
         >
           <div className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee] animate-pulse" />
-          <User className="w-3.5 h-3.5 text-cyan-400" />
+          <User className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
           <div className="flex flex-col">
-            <span className="font-sans font-bold text-xs text-white leading-none truncate max-w-[140px]">
-              {activeCase.patientName || 'Jane Doe'}
+            <span className="font-sans font-bold text-xs text-white leading-none truncate max-w-[130px]">
+              {activeCase.patientName || activeCase.patientId || 'New Clinical Record'}
             </span>
             <span className="font-mono text-[9px] text-cyan-300/80 leading-tight uppercase font-semibold">
-              {activeCase.caseType || 'INITIAL'}
+              {activeCase.caseType || 'INITIAL RECORD'}
             </span>
           </div>
         </button>
+
+        {/* Center: Minimal Clinical AI Status Pill */}
+        <div
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border backdrop-blur-xl shadow-md font-mono text-[10px] font-bold tracking-wider uppercase transition-colors ${
+            isReady
+              ? 'bg-emerald-950/90 border-emerald-500/70 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.4)]'
+              : guidance.readyScore >= 40
+              ? 'bg-amber-950/90 border-amber-500/70 text-amber-300'
+              : 'bg-slate-950/90 border-slate-700/70 text-slate-400'
+          }`}
+        >
+          <span
+            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+              isReady
+                ? 'bg-emerald-400 shadow-[0_0_6px_#34d399] animate-pulse'
+                : guidance.readyScore >= 40
+                ? 'bg-amber-400 animate-pulse'
+                : 'bg-rose-500'
+            }`}
+          />
+          <span>{isReady ? 'AI READY' : guidance.readyScore >= 40 ? 'ALIGNING' : 'NOT READY'}</span>
+        </div>
 
         {/* Step Counter Button */}
         <button
@@ -183,7 +205,9 @@ const WorkflowHeaderComponent: React.FC<WorkflowHeaderProps> = ({
         {isReady ? (
           <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-950/95 border border-emerald-400 text-emerald-200 text-xs font-bold tracking-wide shadow-[0_0_20px_rgba(16,185,129,0.5)] backdrop-blur-xl animate-in zoom-in-95 duration-200">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
-            <span className="font-mono text-emerald-300">100% ALIGNED</span>
+            <span className="font-mono text-emerald-300">
+              {Math.round(guidance.readyScore || guidance.readiness?.score || 90)}% ALIGNED
+            </span>
             <span className="text-emerald-500">•</span>
             <span>CAPTURE READY — HOLD STILL</span>
           </div>
