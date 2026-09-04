@@ -1267,42 +1267,6 @@ const OrthodonticOverlayCanvasComponent: React.FC<OrthodonticOverlayProps> = ({
               </g>
             )}
 
-            {/* Non-intrusive bottom spirit level gauge */}
-            {!isIntraoral && (
-              <g transform={`translate(${(0.5 * W).toFixed(1)}, ${(H - 120).toFixed(1)})`}>
-                <rect
-                  x="-50"
-                  y="-8"
-                  width="100"
-                  height="16"
-                  rx="8"
-                  fill="#080c14"
-                  fillOpacity={0.85}
-                  stroke={Math.abs(rollAngle) <= 3.5 ? '#10b981' : '#f59e0b'}
-                  strokeWidth={1.2}
-                />
-                <line x1="-8" y1="-8" x2="-8" y2="8" stroke="rgba(255,255,255,0.3)" strokeWidth="1" />
-                <line x1="8" y1="-8" x2="8" y2="8" stroke="rgba(255,255,255,0.3)" strokeWidth="1" />
-                <circle
-                  cx={Math.max(-40, Math.min(40, -rollAngle * 6))}
-                  cy="0"
-                  r="5.5"
-                  fill={Math.abs(rollAngle) <= 3.5 ? '#10b981' : '#f59e0b'}
-                  style={{ transition: 'cx 80ms ease-out' }}
-                />
-                <text
-                  x="0"
-                  y="20"
-                  fill="#94a3b8"
-                  fontSize="9"
-                  fontWeight="600"
-                  textAnchor="middle"
-                  fontFamily="monospace"
-                >
-                  {Math.abs(rollAngle) <= 3.5 ? 'LEVEL' : `${rollAngle > 0 ? '+' : ''}${rollAngle.toFixed(1)}°`}
-                </text>
-              </g>
-            )}
           </svg>
         </div>
       )}
@@ -1310,15 +1274,37 @@ const OrthodonticOverlayCanvasComponent: React.FC<OrthodonticOverlayProps> = ({
       {/* ================================================================= */}
       {/* 3. Z-40: ALIGNMENT & CORRECTION DIRECTIVE HUD PILL                */}
       {/* ================================================================= */}
-      <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-40 pointer-events-none flex flex-col items-center gap-1.5 transition-all duration-200">
+      <div className="absolute bottom-44 left-1/2 -translate-x-1/2 z-40 pointer-events-none flex flex-col items-center gap-2 transition-all duration-200 w-max max-w-[90%]">
+        {/* Compact Spirit Level Indicator */}
+        {!isIntraoral && Math.abs(rollAngle) > 0.5 && (
+          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-950/85 border border-slate-700/80 backdrop-blur-md shadow-md">
+            <div className="w-14 h-2 rounded-full bg-slate-800 relative overflow-hidden border border-slate-700/80">
+              <div className="absolute top-0 bottom-0 left-1/2 w-0.5 -translate-x-1/2 bg-slate-500" />
+              <div
+                className={`absolute top-0 bottom-0 w-2.5 rounded-full transition-all duration-100 ${
+                  Math.abs(rollAngle) <= 3.5 ? 'bg-emerald-400' : 'bg-amber-400'
+                }`}
+                style={{
+                  left: `calc(50% + ${Math.max(-20, Math.min(20, -rollAngle * 2.8))}px - 5px)`,
+                }}
+              />
+            </div>
+            <span className={`text-[10px] font-mono font-bold ${
+              Math.abs(rollAngle) <= 3.5 ? 'text-emerald-400' : 'text-amber-400'
+            }`}>
+              {Math.abs(rollAngle) <= 3.5 ? '0° LEVEL' : `${rollAngle > 0 ? '+' : ''}${rollAngle.toFixed(1)}°`}
+            </span>
+          </div>
+        )}
+
         {isReady ? (
           <div className="flex items-center gap-2 px-5 py-2 rounded-full bg-emerald-500/90 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/30 backdrop-blur-md animate-pulse">
             <span className="w-2 h-2 rounded-full bg-white animate-ping" />
             <span>READY — HOLD STILL</span>
           </div>
         ) : guidance.primaryMessage ? (
-          <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-950/85 border border-amber-500/40 text-amber-300 font-bold text-xs uppercase tracking-wide shadow-lg backdrop-blur-md">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+          <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-950/90 border border-amber-500/50 text-amber-300 font-bold text-xs uppercase tracking-wide shadow-lg backdrop-blur-md">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
             <span>{guidance.primaryMessage}</span>
           </div>
         ) : null}
