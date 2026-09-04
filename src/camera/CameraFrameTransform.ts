@@ -16,6 +16,17 @@ export interface CropRect {
   height: number;
 }
 
+export interface CameraTransformState {
+  sensorWidth: number;
+  sensorHeight: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  zoomLevel: number;
+  isHardwareZoom: boolean;
+  cropRect: CropRect;
+  isMirrored: boolean;
+}
+
 export interface TransformMetrics {
   sensorWidth: number;
   sensorHeight: number;

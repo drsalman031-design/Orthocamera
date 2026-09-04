@@ -1,13 +1,4 @@
-/**
- * HysteresisController.ts
- *
- * State machine and hysteresis smoothing engine for orthodontic camera guidance.
- * Eliminates countdown jitter by establishing separate entry and exit thresholds,
- * persistence windows, and tracking loss grace periods.
- *
- * State transitions:
- * SEARCHING -> ALIGNING -> CANDIDATE_READY -> READY -> COUNTDOWN -> CAPTURE
- */
+import { CaptureReadiness } from '../types';
 
 export type GuidanceStateStage =
   | 'SEARCHING'
@@ -21,9 +12,9 @@ export type GuidanceStateStage =
 
 export interface HysteresisConfig {
   enterReadyScore: number; // 85
-  exitReadyScore: number; // 68 (lower threshold prevents flickering)
-  candidatePersistenceMs: number; // 250ms stable in CANDIDATE_READY before READY
-  temporaryLossGraceMs: number; // 350ms grace period before dropping from READY
+  exitReadyScore: number; // 70
+  candidatePersistenceMs: number; // 600ms stable in CANDIDATE_READY before READY
+  temporaryLossGraceMs: number; // 300ms grace period before dropping from READY
   cooldownPeriodMs: number; // 1500ms lockout after capture
 }
 
@@ -48,8 +39,8 @@ export class HysteresisController {
     this.config = {
       enterReadyScore: 85,
       exitReadyScore: 70,
-      candidatePersistenceMs: 250,
-      temporaryLossGraceMs: 350,
+      candidatePersistenceMs: 600,
+      temporaryLossGraceMs: 300,
       cooldownPeriodMs: 1500,
       ...customConfig,
     };
@@ -63,15 +54,35 @@ export class HysteresisController {
    * Evaluates the current frame against hysteresis rules and returns the updated state.
    */
   public update(
-    rawScore: number,
-    isPositionValid: boolean,
-    isAngleValid: boolean,
-    isMotionStable: boolean,
-    autoCaptureEnabled: boolean,
+    inputOrScore: CaptureReadiness | number,
+    isPositionValid?: boolean,
+    isAngleValid?: boolean,
+    isMotionStable?: boolean,
+    autoCaptureEnabled: boolean = true,
     timestamp: number = Date.now()
   ): ControllerStateUpdate {
+    let rawScore: number;
+    let posValid: boolean;
+    let angValid: boolean;
+    let motionStable: boolean;
+    let isFullyReady: boolean;
+
+    if (typeof inputOrScore === 'number') {
+      rawScore = inputOrScore;
+      posValid = !!isPositionValid;
+      angValid = !!isAngleValid;
+      motionStable = isMotionStable !== undefined ? isMotionStable : true;
+      isFullyReady = rawScore >= this.config.enterReadyScore && posValid && angValid && motionStable;
+    } else {
+      const readiness = inputOrScore;
+      rawScore = readiness.score;
+      posValid = readiness.positionValid;
+      angValid = readiness.angleValid;
+      motionStable = readiness.temporalStabilityValid;
+      isFullyReady = readiness.ready;
+    }
     // 1. Enforce Cooldown period post-capture
-    if (timestamp - this.lastCaptureTime < this.config.cooldownPeriodMs) {
+    if (this.lastCaptureTime > 0 && timestamp - this.lastCaptureTime < this.config.cooldownPeriodMs) {
       this.currentStage = 'COOLDOWN';
       return {
         stage: 'COOLDOWN',
@@ -81,10 +92,8 @@ export class HysteresisController {
       };
     }
 
-    const passesEntry =
-      rawScore >= this.config.enterReadyScore && isPositionValid && isAngleValid && isMotionStable;
-    const passesExit =
-      rawScore >= this.config.exitReadyScore && isPositionValid && isAngleValid;
+    const passesEntry = isFullyReady && posValid && angValid && motionStable;
+    const passesExit = (isFullyReady || rawScore >= this.config.exitReadyScore) && posValid && angValid;
 
     // State machine transitions
     switch (this.currentStage) {
@@ -141,8 +150,16 @@ export class HysteresisController {
         break;
 
       case 'COUNTDOWN':
-        // Check for hand tremor / sudden motion: PAUSE countdown rather than cancel!
-        if (!isMotionStable) {
+        if (!posValid || !angValid) {
+          // Critical alignment lost (patient turned away / moved out of frame)
+          this.currentStage = 'ALIGNING';
+          this.countdownValue = null;
+          this.countdownStartTime = null;
+          break;
+        }
+
+        // Check for hand tremor / sudden device motion: PAUSE countdown rather than cancel!
+        if (!motionStable) {
           this.currentStage = 'PAUSED_MOTION';
           break;
         }

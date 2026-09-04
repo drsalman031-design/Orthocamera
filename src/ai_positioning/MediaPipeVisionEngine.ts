@@ -11,6 +11,14 @@
 import { FilesetResolver, FaceLandmarker } from '@mediapipe/tasks-vision';
 import type { FaceAnalysisResult } from './FaceAnalyzer';
 import type { MeshContours } from '../types';
+import {
+  extractHeadPoseFromMatrix,
+  calculateGeometricHeadPose,
+  evaluateLandmarkQuality,
+  LANDMARK_INDICES,
+  LEFT_EYE_CONTOUR,
+  RIGHT_EYE_CONTOUR,
+} from './HeadPoseEstimator';
 
 export interface MediaPipeStatus {
   isSupported: boolean;
@@ -115,7 +123,7 @@ class MediaPipeVisionEngineSingleton {
             delegate,
           },
           outputFaceBlendshapes: true,
-          outputFacialTransformationMatrixes: false,
+          outputFacialTransformationMatrixes: true,
           runningMode: 'VIDEO',
           numFaces: 1,
           minFaceDetectionConfidence: 0.35,
@@ -173,17 +181,17 @@ class MediaPipeVisionEngineSingleton {
     timestampMs: number
   ): FaceAnalysisResult | null {
     if (!this.faceLandmarker || !this.status.isReady) {
-      return this.lastResult;
+      return null;
     }
 
     // Safety checks on input dimensions to prevent MediaPipe throw
     if (videoOrCanvas instanceof HTMLVideoElement) {
       if (videoOrCanvas.readyState < 2 || videoOrCanvas.videoWidth <= 0 || videoOrCanvas.videoHeight <= 0) {
-        return this.lastResult;
+        return null;
       }
     } else if (videoOrCanvas instanceof HTMLCanvasElement) {
       if (videoOrCanvas.width <= 0 || videoOrCanvas.height <= 0) {
-        return this.lastResult;
+        return null;
       }
     }
 
@@ -211,7 +219,8 @@ class MediaPipeVisionEngineSingleton {
 
       const landmarks = results.faceLandmarks[0];
       if (!landmarks || landmarks.length < 468) {
-        return this.lastResult;
+        this.lastResult = null;
+        return null;
       }
 
       // Calculate Bounding Box
@@ -233,15 +242,6 @@ class MediaPipeVisionEngineSingleton {
       const centerX = minX + boxW / 2;
       const centerY = minY + boxH / 2;
 
-      // Key Landmark Indices from MediaPipe Mesh:
-      // Left eye outer: 33, pupil/center: 468/473 or 133
-      // Right eye outer: 263, pupil/center: 473 or 362
-      // Left pupil: 468 (or 469), Right pupil: 473 (or 474)
-      // Nose tip: 1
-      // Chin tip: 152
-      // Mouth center: 13/14
-      // Left mouth corner: 61, Right mouth corner: 291
-      // Upper lip vermilion: 0, Lower lip: 17
       const getPt = (idx: number) => ({
         x: landmarks[idx]?.x ?? 0.5,
         y: landmarks[idx]?.y ?? 0.5,
@@ -257,35 +257,34 @@ class MediaPipeVisionEngineSingleton {
         rightPupil: landmarks[473] ? getPt(473) : getPt(263),
       };
 
-      const leftEyeOuter = landmarks[33] || landmarks[130];
-      const rightEyeOuter = landmarks[263] || landmarks[359];
-      const noseTip = landmarks[1];
-      const chinTip = landmarks[152];
-      const leftMouth = landmarks[61];
-      const rightMouth = landmarks[291];
-      const upperLip = landmarks[0];
-      const lowerLip = landmarks[17];
+      const leftEyeOuter = landmarks[LANDMARK_INDICES.LEFT_EYE_OUTER] || landmarks[33];
+      const rightEyeOuter = landmarks[LANDMARK_INDICES.RIGHT_EYE_OUTER] || landmarks[263];
+      const noseTip = landmarks[LANDMARK_INDICES.NOSE_TIP] || landmarks[1];
+      const chinTip = landmarks[LANDMARK_INDICES.CHIN_TIP] || landmarks[152];
+      const leftMouth = landmarks[LANDMARK_INDICES.LEFT_MOUTH_CORNER] || landmarks[61];
+      const rightMouth = landmarks[LANDMARK_INDICES.RIGHT_MOUTH_CORNER] || landmarks[291];
+      const upperLip = landmarks[LANDMARK_INDICES.UPPER_LIP] || landmarks[0];
+      const lowerLip = landmarks[LANDMARK_INDICES.LOWER_LIP] || landmarks[17];
 
-      // 1. Roll / Interpupillary Tilt Calculation
+      // 1. Roll / Interpupillary Tilt Calculation from Eye Contours
       const dEyeX = rightEyeOuter.x - leftEyeOuter.x;
       const dEyeY = rightEyeOuter.y - leftEyeOuter.y;
       const rollDeg = Math.atan2(dEyeY, dEyeX) * (180 / Math.PI);
 
-      // 2. Yaw (Rotation Left/Right)
-      // Measured by nose position relative to eye midpoint and z-depth of left/right cheeks
-      const eyeMidX = (leftEyeOuter.x + rightEyeOuter.x) / 2;
-      const noseOffset = (noseTip.x - eyeMidX) / (boxW / 2);
-      const dZ = (rightEyeOuter.z - leftEyeOuter.z);
-      const yawDeg = Math.max(-90, Math.min(90, noseOffset * 45 + dZ * 60));
+      // 2. Extract Head Pose from Transformation Matrix or Geometric Fallback
+      let pose = results.facialTransformationMatrixes && results.facialTransformationMatrixes.length > 0
+        ? extractHeadPoseFromMatrix(results.facialTransformationMatrixes[0], 0.95)
+        : calculateGeometricHeadPose(landmarks, 0.85);
 
-      // 3. Pitch (Head Tilt Up/Down / Frankfort Plane)
-      // Ratio of nose-to-eye vs nose-to-chin distance, plus nose-tip z-depth
-      const eyeMidY = (leftEyeOuter.y + rightEyeOuter.y) / 2;
-      const upperFaceDist = Math.max(0.01, noseTip.y - eyeMidY);
-      const lowerFaceDist = Math.max(0.01, chinTip.y - noseTip.y);
-      const verticalProportion = upperFaceDist / lowerFaceDist;
-      // Normal neutral head upright proportion is ~0.8 to 0.95
-      const pitchDeg = Math.max(-45, Math.min(45, (verticalProportion - 0.88) * 50));
+      if (pose.source === 'unavailable' || pose.yawDeg === null) {
+        pose = calculateGeometricHeadPose(landmarks, 0.85);
+      }
+
+      const yawDeg = pose.yawDeg ?? 0;
+      const pitchDeg = pose.pitchDeg ?? 0;
+
+      // 3. Evaluate Landmark Quality
+      const landmarkQuality = evaluateLandmarkQuality(landmarks, 0.95);
 
       // 4. Blendshape extractions: Smile score & Lip Aperture
       let smileScore = 0;
@@ -300,17 +299,21 @@ class MediaPipeVisionEngineSingleton {
         const jawOpen = categories.find((c) => c.categoryName === 'jawOpen')?.score || 0;
         lipAperture = jawOpen;
       } else {
-        // Geometric fallback for smile: mouth corner elevation and mouth width
         const mouthW = Math.hypot(rightMouth.x - leftMouth.x, rightMouth.y - leftMouth.y);
-        const mouthCornerAvgY = (leftMouth.y + rightMouth.y) / 2;
-        const mouthElevation = noseTip.y - mouthCornerAvgY;
         smileScore = Math.min(1, Math.max(0, (mouthW / boxW - 0.35) * 3));
-        lipAperture = Math.min(1, Math.max(0, Math.abs(lowerLip.y - upperLip.y) / boxH * 4));
+        lipAperture = Math.min(1, Math.max(0, (Math.abs(lowerLip.y - upperLip.y) / boxH) * 4));
       }
+
+      // Compute composite bounded confidence (never hardcoded 0.99)
+      const computedConfidence = Math.max(
+        0.1,
+        Math.min(0.96, pose.confidence * 0.5 + landmarkQuality.confidence * 0.5)
+      );
 
       this.lastResult = {
         detected: true,
-        confidence: 0.99,
+        confidence: computedConfidence,
+        aiEngine: 'mediapipe',
         boundingBox: {
           x: minX,
           y: minY,
@@ -339,12 +342,15 @@ class MediaPipeVisionEngineSingleton {
           upperLip: { x: upperLip.x, y: upperLip.y },
           lowerLip: { x: lowerLip.x, y: lowerLip.y },
         },
+        pose,
+        landmarkQuality,
       };
 
       return this.lastResult;
     } catch (err) {
       console.warn('Error during MediaPipe detection:', err);
-      return this.lastResult;
+      this.lastResult = null;
+      return null;
     } finally {
       this.isProcessingFrame = false;
     }
@@ -352,3 +358,4 @@ class MediaPipeVisionEngineSingleton {
 }
 
 export const MediaPipeVision = new MediaPipeVisionEngineSingleton();
+

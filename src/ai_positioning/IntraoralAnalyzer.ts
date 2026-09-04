@@ -148,7 +148,6 @@ export class OnDeviceIntraoralAnalyzer implements IIntraoralAnalyzer {
         const rightSliceY = this.getQuadrantsLumaCenter(data, 160, 0.55, 0.8, 0.3, 0.7);
         const occlusalTiltDeg = Math.min(15, Math.max(-15, (leftSliceY - rightSliceY) * 30));
 
-        // Retractor adequacy: checks if lateral margins are clear and not blocked by soft lips
         let retractorAdequate = archWidth > 0.45 || gingivaCount > 30;
         let aiEngine: 'mediapipe' | 'chroma' = 'chroma';
 
@@ -157,16 +156,41 @@ export class OnDeviceIntraoralAnalyzer implements IIntraoralAnalyzer {
           const mp = MediaPipeVision.detectForVideo(mpSource, performance.now());
           if (mp && mp.detected) {
             aiEngine = 'mediapipe';
-            // If MediaPipe sees wide retracted lips and open bite, confirm retractor clearance
             if (mp.lipApertureRatio && mp.lipApertureRatio > 0.12) {
               retractorAdequate = true;
             }
           }
         }
 
+        // Calculate real edge gradient sharpness inside the tooth/enamel region
+        let enamelEdgeDiffSum = 0;
+        let enamelLumaSum = 0;
+        let sampledCount = 0;
+        const startY = Math.max(0, Math.floor(minY));
+        const endY = Math.min(160, Math.ceil(maxY));
+        const startX = Math.max(0, Math.floor(minX));
+        const endX = Math.min(160, Math.ceil(maxX));
+
+        for (let y = startY; y < endY; y += 2) {
+          for (let x = startX; x < endX; x += 2) {
+            const idx = (y * 160 + x) * 4;
+            const luma = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+            enamelLumaSum += luma;
+            if (x > startX) {
+              const prevIdx = (y * 160 + (x - 2)) * 4;
+              const prevLuma = 0.299 * data[prevIdx] + 0.587 * data[prevIdx + 1] + 0.114 * data[prevIdx + 2];
+              enamelEdgeDiffSum += Math.abs(luma - prevLuma);
+            }
+            sampledCount++;
+          }
+        }
+
+        const avgLuma = sampledCount > 0 ? Math.round(enamelLumaSum / sampledCount) : 128;
+        const computedSharpness = sampledCount > 0 ? Math.min(100, Math.round((enamelEdgeDiffSum / sampledCount) * 5)) : 50;
+
         return {
           detected: true,
-          confidence: Math.min(0.98, totalEnamelPixels / 280),
+          confidence: Math.min(0.85, totalEnamelPixels / 300),
           aiEngine,
           dentalMidlineOffset: midlineOffset,
           occlusalPlaneTiltDeg: occlusalTiltDeg,
@@ -174,8 +198,8 @@ export class OnDeviceIntraoralAnalyzer implements IIntraoralAnalyzer {
           retractorFeedback: retractorAdequate ? 'Retractors adequate' : 'Pull retractors outward',
           archCoverageRatio: Math.min(1.0, archWidth / 0.7),
           mirrorFoggingDetected: false,
-          toothRegionSharpness: 88,
-          intraoralExposureScore: 140,
+          toothRegionSharpness: computedSharpness,
+          intraoralExposureScore: avgLuma,
           archBoundingBox: {
             x: Math.max(0, enamelCenterX - archWidth / 2),
             y: Math.max(0, enamelCenterY - archHeight / 2),

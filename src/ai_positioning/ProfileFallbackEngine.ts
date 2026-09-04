@@ -22,13 +22,15 @@ export interface ProfileStateResult {
   estimatedRoll: number;
   confidence: number;
   isProfileAligned: boolean;
+  isFresh: boolean;
+  isCaptureEligible: boolean;
   guidanceMessage: string;
 }
 
 export class ProfileFallbackEngine {
   private lastStableResult: FaceAnalysisResult | null = null;
   private lastStableTimestamp: number = 0;
-  private readonly persistenceWindowMs = 1200; // 1.2s memory of stable pose
+  private readonly persistenceWindowMs = 1000; // 1.0s UI smoothing window
   private currentState: ProfileTrackingState = 'INVALID_POSITION';
 
   public evaluateProfile(
@@ -36,30 +38,33 @@ export class ProfileFallbackEngine {
     currentResult: FaceAnalysisResult | null,
     timestamp: number = Date.now()
   ): ProfileStateResult {
-    const targetYawSign = isRightProfile ? 1 : -1; // Right profile yaw is positive, Left is negative
-    const minProfileYaw = 60; // 60 to 90 degrees yaw required for profile
+    const targetYawSign = isRightProfile ? 1 : -1;
+    const minProfileYaw = 70; // 70 to 95 degrees yaw required for strict 90° profile
 
-    if (currentResult && currentResult.detected && currentResult.confidence > 0.35) {
+    if (currentResult && currentResult.detected && currentResult.confidence > 0.4) {
       const currentYaw = currentResult.yawDeg;
-      const matchesDirection = isRightProfile ? currentYaw > 30 : currentYaw < -30;
+      const matchesDirection = isRightProfile ? currentYaw > 35 : currentYaw < -35;
 
       if (matchesDirection) {
-        // We have active tracking
+        // Active fresh tracking
         this.lastStableResult = currentResult;
         this.lastStableTimestamp = timestamp;
         this.currentState = 'TRACKING';
 
         const isFullyTurned = Math.abs(currentYaw) >= minProfileYaw;
-        const isRollLevel = Math.abs(currentResult.rollDeg) <= 5;
+        const isRollLevel = Math.abs(currentResult.rollDeg) <= 6;
+        const isAligned = isFullyTurned && isRollLevel;
 
         return {
           state: 'TRACKING',
           estimatedYaw: currentYaw,
           estimatedRoll: currentResult.rollDeg,
           confidence: currentResult.confidence,
-          isProfileAligned: isFullyTurned && isRollLevel,
+          isProfileAligned: isAligned,
+          isFresh: true,
+          isCaptureEligible: isAligned,
           guidanceMessage: !isFullyTurned
-            ? `Turn patient further ${isRightProfile ? 'right' : 'left'} (90°)`
+            ? `Turn patient further ${isRightProfile ? 'right' : 'left'} (90° profile)`
             : !isRollLevel
             ? 'Level patient head'
             : 'Profile Aligned ✓',
@@ -67,20 +72,22 @@ export class ProfileFallbackEngine {
       }
     }
 
-    // MediaPipe dropped tracking (common at true 90° lateral profile)
-    // Check if we have recent stable pose within persistence window
+    // MediaPipe dropped tracking (common at lateral profile)
+    // Retain pose for UI overlay smoothing ONLY, but mark capture ineligible (fail-closed)
     if (this.lastStableResult && timestamp - this.lastStableTimestamp <= this.persistenceWindowMs) {
       this.currentState = 'TEMPORARILY_LOST';
       const decayRatio = (timestamp - this.lastStableTimestamp) / this.persistenceWindowMs;
-      const decayedConfidence = Math.max(0.4, (this.lastStableResult.confidence || 0.8) * (1 - decayRatio * 0.4));
+      const decayedConfidence = Math.max(0.1, (this.lastStableResult.confidence || 0.6) * (1 - decayRatio));
 
       return {
         state: 'TEMPORARILY_LOST',
         estimatedYaw: this.lastStableResult.yawDeg,
         estimatedRoll: this.lastStableResult.rollDeg,
         confidence: decayedConfidence,
-        isProfileAligned: Math.abs(this.lastStableResult.yawDeg) >= 55,
-        guidanceMessage: 'Hold steady (Profile locked)',
+        isProfileAligned: false,
+        isFresh: false,
+        isCaptureEligible: false, // Strict: stale data CANNOT trigger capture
+        guidanceMessage: 'Hold steady — re-acquiring profile...',
       };
     }
 
@@ -92,6 +99,8 @@ export class ProfileFallbackEngine {
       estimatedRoll: 0,
       confidence: 0,
       isProfileAligned: false,
+      isFresh: false,
+      isCaptureEligible: false,
       guidanceMessage: `Turn patient to 90° ${isRightProfile ? 'right' : 'left'} profile`,
     };
   }
@@ -106,3 +115,4 @@ export class ProfileFallbackEngine {
     this.currentState = 'INVALID_POSITION';
   }
 }
+

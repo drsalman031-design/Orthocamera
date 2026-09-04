@@ -7,7 +7,7 @@
  */
 
 import { MediaPipeVision } from './MediaPipeVisionEngine';
-import type { MeshContours } from '../types';
+import type { FacePose, LandmarkQuality, MeshContours } from '../types';
 
 export interface FaceAnalysisResult {
   detected: boolean;
@@ -35,7 +35,7 @@ export interface FaceAnalysisResult {
   // Lip aperture / strain ratio (0: tight/touching, 1: wide open)
   lipApertureRatio?: number;
   meshContours?: MeshContours;
-  // Landmark coordinates normalized
+  // Landmark coordinates normalized (only present if truly detected by ML/vision)
   landmarks?: {
     leftEye: { x: number; y: number };
     rightEye: { x: number; y: number };
@@ -49,6 +49,8 @@ export interface FaceAnalysisResult {
     upperLip?: { x: number; y: number };
     lowerLip?: { x: number; y: number };
   };
+  pose?: FacePose;
+  landmarkQuality?: LandmarkQuality;
 }
 
 export interface IFaceAnalyzer {
@@ -102,9 +104,8 @@ export class OnDeviceFaceAnalyzer implements IFaceAnalyzer {
 
       const now = performance.now();
 
-      // 1. Check MediaPipe on-device ML FaceLandmarker first
+      // 1. Check MediaPipe on-device ML FaceLandmarker first (Gold Standard)
       if (MediaPipeVision.getStatus().isReady) {
-        // Use sourceCanvas (320x240 frame buffer) or live video element
         const mpSource =
           videoElement && videoElement.readyState >= 2 && videoElement.videoWidth > 0
             ? videoElement
@@ -116,13 +117,12 @@ export class OnDeviceFaceAnalyzer implements IFaceAnalyzer {
             return {
               ...mpResult,
               aiEngine: 'mediapipe',
-              meshContours: mpResult.meshContours,
             };
           }
         }
       }
 
-      // Asynchronous probe with native browser FaceDetector when supported (Chromium / Android)
+      // 2. Asynchronous probe with native browser FaceDetector when supported
       if (this.nativeDetector && !this.isNativeDetecting && now - this.lastNativeTimestamp > 120) {
         this.isNativeDetecting = true;
         this.lastNativeTimestamp = now;
@@ -172,23 +172,45 @@ export class OnDeviceFaceAnalyzer implements IFaceAnalyzer {
                 }
               }
 
+              // Do NOT fabricate missing landmarks
+              const detectedLandmarks =
+                leftEye && rightEye
+                  ? {
+                      leftEye,
+                      rightEye,
+                      noseTip: center,
+                      mouthCenter: mouth || { x: center.x, y: center.y + normBox.height * 0.3 },
+                      chinTip: { x: center.x, y: center.y + normBox.height * 0.5 },
+                    }
+                  : undefined;
+
               this.lastNativeResult = {
                 detected: true,
-                confidence: 0.98,
+                confidence: 0.75,
+                aiEngine: 'native',
                 boundingBox: normBox,
                 center,
                 yawDeg: 0,
                 pitchDeg: 0,
                 rollDeg: eyeLineAngleDeg,
                 faceHeightRatio: normBox.height,
-                smileScore: 0.5,
+                smileScore: 0.0,
                 eyeLineAngleDeg,
-                landmarks: {
-                  leftEye: leftEye || { x: center.x - 0.12, y: center.y - 0.1 },
-                  rightEye: rightEye || { x: center.x + 0.12, y: center.y - 0.1 },
-                  noseTip: { x: center.x, y: center.y },
-                  mouthCenter: mouth || { x: center.x, y: center.y + 0.14 },
-                  chinTip: { x: center.x, y: center.y + 0.24 },
+                landmarks: detectedLandmarks,
+                pose: {
+                  yawDeg: null, // Native 2D detector cannot measure 3D yaw accurately
+                  pitchDeg: null,
+                  rollDeg: eyeLineAngleDeg,
+                  confidence: 0.5,
+                  source: 'geometric',
+                },
+                landmarkQuality: {
+                  available: !!detectedLandmarks,
+                  landmarkCount: detectedLandmarks ? 5 : 0,
+                  requiredLandmarksPresent: false,
+                  symmetryScore: 0.5,
+                  geometryScore: 0.5,
+                  confidence: 0.4,
                 },
               };
             } else {
@@ -200,7 +222,11 @@ export class OnDeviceFaceAnalyzer implements IFaceAnalyzer {
           });
       }
 
-      // Downsample for high-speed 60fps analysis without dropping camera frames
+      if (this.lastNativeResult && this.lastNativeResult.detected) {
+        return this.lastNativeResult;
+      }
+
+      // 3. Fallback: Fast RGB chromaticity locator for rough visual centering only
       this.sampleCtx.drawImage(
         sourceCanvas as CanvasImageSource,
         0,
@@ -216,7 +242,6 @@ export class OnDeviceFaceAnalyzer implements IFaceAnalyzer {
       const imgData = this.sampleCtx.getImageData(0, 0, 160, 160);
       const data = imgData.data;
 
-      // Skin tone & facial luminosity center-of-mass analysis
       let totalSkinWeight = 0;
       let weightedX = 0;
       let weightedY = 0;
@@ -225,7 +250,6 @@ export class OnDeviceFaceAnalyzer implements IFaceAnalyzer {
         minY = 160,
         maxY = 0;
 
-      // Fast RGB -> HSV/YCbCr skin-color chromaticity and luminance detector
       for (let y = 10; y < 150; y += 2) {
         for (let x = 10; x < 150; x += 2) {
           const idx = (y * 160 + x) * 4;
@@ -233,7 +257,6 @@ export class OnDeviceFaceAnalyzer implements IFaceAnalyzer {
           const g = data[idx + 1];
           const b = data[idx + 2];
 
-          // Normalized skin chromaticity heuristic
           const sum = r + g + b;
           if (sum > 60 && sum < 700) {
             const nr = r / sum;
@@ -253,44 +276,17 @@ export class OnDeviceFaceAnalyzer implements IFaceAnalyzer {
         }
       }
 
-      // Check if native detector or chromaticity found a face
-      const native = this.lastNativeResult;
+      if (totalSkinWeight > 80) {
+        const cx = weightedX / totalSkinWeight / 160;
+        const cy = weightedY / totalSkinWeight / 160;
+        const faceW = Math.max(0.15, (maxX - minX) / 160);
+        const faceH = Math.max(0.2, (maxY - minY) / 160);
 
-      if (totalSkinWeight > 80 || (native && native.detected)) {
-        const cx = native ? native.center.x : weightedX / totalSkinWeight / 160;
-        const cy = native ? native.center.y : weightedY / totalSkinWeight / 160;
-        const faceW = native ? native.boundingBox.width : Math.max(0.2, (maxX - minX) / 160);
-        const faceH = native ? native.boundingBox.height : Math.max(0.3, (maxY - minY) / 160);
-
-        // Estimate symmetry & tilt from horizontal gradient slices
-        const leftHalfWeight = this.getRegionLuminance(data, 160, 0.2, 0.45, 0.3, 0.7);
-        const rightHalfWeight = this.getRegionLuminance(data, 160, 0.55, 0.8, 0.3, 0.7);
-        const yawEstimate = Math.min(35, Math.max(-35, (leftHalfWeight - rightHalfWeight) * 45));
-
-        const topEyeRegion = this.getRegionLuminance(data, 160, 0.3, 0.7, 0.25, 0.4);
-        const mouthRegion = this.getRegionLuminance(data, 160, 0.35, 0.65, 0.55, 0.7);
-        const pitchEstimate = Math.min(25, Math.max(-25, (topEyeRegion - mouthRegion) * 30));
-
-        // Horizontal eye level tilt proxy
-        const leftEyeLuma = this.getRegionLuminance(data, 160, 0.3, 0.45, 0.3, 0.4);
-        const rightEyeLuma = this.getRegionLuminance(data, 160, 0.55, 0.7, 0.3, 0.4);
-        const rollEstimate = native && Math.abs(native.rollDeg) > 0.5
-          ? native.rollDeg
-          : Math.min(20, Math.max(-20, (leftEyeLuma - rightEyeLuma) * 20));
-
-        // High-precision landmark estimation
-        const leftEyeX = cx - 0.12;
-        const rightEyeX = cx + 0.12;
-        const eyeY = cy - 0.1;
-        const noseX = cx + (yawEstimate / 45) * 0.04;
-        const noseY = cy + 0.02 + (pitchEstimate / 30) * 0.03;
-        const mouthY = cy + 0.14;
-        const smileLumaDiff = Math.abs(mouthRegion - 0.5);
-        const computedSmileScore = Math.min(1.0, Math.max(0.0, mouthRegion > 0.45 ? 0.75 + smileLumaDiff * 0.5 : 0.15));
-
+        // Chromaticity detection provides bounding box only, NEVER fabricated landmarks or fake 3D pose
         return {
           detected: true,
-          confidence: native ? 0.98 : Math.min(0.98, totalSkinWeight / 400),
+          confidence: Math.min(0.4, totalSkinWeight / 800),
+          aiEngine: 'chroma',
           boundingBox: {
             x: Math.max(0, cx - faceW / 2),
             y: Math.max(0, cy - faceH / 2),
@@ -298,25 +294,28 @@ export class OnDeviceFaceAnalyzer implements IFaceAnalyzer {
             height: faceH,
           },
           center: { x: cx, y: cy },
-          yawDeg: yawEstimate,
-          pitchDeg: pitchEstimate,
-          rollDeg: rollEstimate,
+          yawDeg: 0,
+          pitchDeg: 0,
+          rollDeg: 0,
           faceHeightRatio: faceH,
-          smileScore: computedSmileScore,
-          lipApertureRatio: computedSmileScore > 0.5 ? 0.6 : 0.05,
-          eyeLineAngleDeg: rollEstimate,
-          landmarks: native?.landmarks || {
-            leftEye: { x: leftEyeX, y: eyeY },
-            rightEye: { x: rightEyeX, y: eyeY },
-            noseTip: { x: noseX, y: noseY },
-            mouthCenter: { x: cx, y: mouthY },
-            chinTip: { x: cx, y: cy + 0.24 },
-            leftCheek: { x: cx - 0.2, y: cy },
-            rightCheek: { x: cx + 0.2, y: cy },
-            leftMouthCorner: { x: cx - 0.08, y: mouthY },
-            rightMouthCorner: { x: cx + 0.08, y: mouthY },
-            upperLip: { x: cx, y: mouthY - 0.02 },
-            lowerLip: { x: cx, y: mouthY + 0.02 },
+          smileScore: 0,
+          eyeLineAngleDeg: 0,
+          // Landmarks and detailed pose are explicitly undefined/unavailable to prevent false capture gates
+          landmarks: undefined,
+          pose: {
+            yawDeg: null,
+            pitchDeg: null,
+            rollDeg: null,
+            confidence: 0,
+            source: 'unavailable',
+          },
+          landmarkQuality: {
+            available: false,
+            landmarkCount: 0,
+            requiredLandmarksPresent: false,
+            symmetryScore: 0,
+            geometryScore: 0,
+            confidence: 0,
           },
         };
       }
@@ -325,32 +324,6 @@ export class OnDeviceFaceAnalyzer implements IFaceAnalyzer {
     }
 
     return this.getUndetectedResult();
-  }
-
-  private getRegionLuminance(
-    data: Uint8ClampedArray,
-    stride: number,
-    xMinNorm: number,
-    xMaxNorm: number,
-    yMinNorm: number,
-    yMaxNorm: number
-  ): number {
-    const xStart = Math.floor(xMinNorm * stride);
-    const xEnd = Math.floor(xMaxNorm * stride);
-    const yStart = Math.floor(yMinNorm * stride);
-    const yEnd = Math.floor(yMaxNorm * stride);
-
-    let sum = 0;
-    let count = 0;
-    for (let y = yStart; y < yEnd; y += 2) {
-      for (let x = xStart; x < xEnd; x += 2) {
-        const idx = (y * stride + x) * 4;
-        const luma = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-        sum += luma;
-        count++;
-      }
-    }
-    return count > 0 ? sum / count / 255 : 0.5;
   }
 
   private getUndetectedResult(): FaceAnalysisResult {
@@ -365,6 +338,22 @@ export class OnDeviceFaceAnalyzer implements IFaceAnalyzer {
       faceHeightRatio: 0,
       smileScore: 0,
       eyeLineAngleDeg: 0,
+      pose: {
+        yawDeg: null,
+        pitchDeg: null,
+        rollDeg: null,
+        confidence: 0,
+        source: 'unavailable',
+      },
+      landmarkQuality: {
+        available: false,
+        landmarkCount: 0,
+        requiredLandmarksPresent: false,
+        symmetryScore: 0,
+        geometryScore: 0,
+        confidence: 0,
+      },
     };
   }
 }
+

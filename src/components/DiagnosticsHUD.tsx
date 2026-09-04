@@ -108,30 +108,48 @@ export const DiagnosticsHUD: React.FC<DiagnosticsHUDProps> = ({
         {/* Head Pose / Occlusal Angle */}
         <div className="bg-white/5 p-2.5 rounded-xl border border-white/10">
           <div className="text-white/40 text-[10px] flex items-center gap-1">
-            <Eye className="w-3 h-3 text-emerald-400" /> 3D POSE ANGLES
+            <Eye className="w-3 h-3 text-emerald-400" /> HEAD POSE
           </div>
           <div className="text-xs font-bold text-white mt-1">
-            Roll: {guidance.headRollDeg > 0 ? '+' : ''}{guidance.headRollDeg.toFixed(1)}°
+            {currentView.category === 'extraoral' ? (
+              guidance.pose && guidance.pose.yawDeg !== null ? (
+                <>
+                  Yaw: {guidance.headYawDeg > 0 ? '+' : ''}{guidance.headYawDeg.toFixed(1)}°
+                </>
+              ) : (
+                'Yaw: —'
+              )
+            ) : (
+              `Tilt: ${guidance.headRollDeg.toFixed(1)}°`
+            )}
           </div>
           <div className="text-[10px] text-white/60">
-            Yaw: {guidance.headYawDeg > 0 ? '+' : ''}{guidance.headYawDeg.toFixed(1)}° | Pitch: {guidance.headPitchDeg.toFixed(1)}°
+            {currentView.category === 'extraoral' ? (
+              guidance.pose && guidance.pose.rollDeg !== null ? (
+                <>Roll: {guidance.headRollDeg.toFixed(1)}° | Pitch: {guidance.headPitchDeg.toFixed(1)}°</>
+              ) : (
+                'Roll: — | Pitch: —'
+              )
+            ) : (
+              `Midline: ${(guidance.centeringDeltaX * 100).toFixed(0)}%`
+            )}
           </div>
         </div>
 
         {/* Quality Score & Status */}
         <div className="bg-white/5 p-2.5 rounded-xl border border-white/10">
           <div className="text-white/40 text-[10px] flex items-center gap-1">
-            <ShieldCheck className="w-3 h-3 text-emerald-400" /> STATUS
+            <ShieldCheck className="w-3 h-3 text-emerald-400" /> READINESS
           </div>
           <div className="text-xs font-bold mt-1">
             {guidance.isReady ? (
-              <span className="text-emerald-400">READY (SCORE {guidance.readyScore}%)</span>
+              <span className="text-emerald-400">READY ({guidance.readyScore}%)</span>
             ) : (
               <span className="text-amber-300">ALIGNING ({guidance.readyScore}%)</span>
             )}
           </div>
           <div className="text-[10px] text-white/60 truncate">
-            {currentView.shortCode}
+            {guidance.dominantReason || currentView.shortCode}
           </div>
         </div>
       </div>

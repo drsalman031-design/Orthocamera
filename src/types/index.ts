@@ -13,6 +13,74 @@ export type ViewId =
   | 'MAXILLARY_OCCLUSAL'
   | 'MANDIBULAR_OCCLUSAL';
 
+export interface Point2D {
+  x: number;
+  y: number;
+}
+
+export interface FacePose {
+  yawDeg: number | null;
+  pitchDeg: number | null;
+  rollDeg: number | null;
+  confidence: number;
+  source: 'mediapipe-matrix' | 'geometric' | 'unavailable';
+}
+
+export interface LandmarkQuality {
+  available: boolean;
+  landmarkCount: number;
+  requiredLandmarksPresent: boolean;
+  symmetryScore: number;
+  geometryScore: number;
+  confidence: number;
+}
+
+export interface TemporalStability {
+  stable: boolean;
+  durationMs: number;
+  positionJitter: number;
+  yawJitterDeg: number;
+  pitchJitterDeg: number;
+  rollJitterDeg: number;
+  confidence: number;
+}
+
+export interface CaptureReadiness {
+  ready: boolean;
+  score: number;
+  positionValid: boolean;
+  angleValid: boolean;
+  distanceValid: boolean;
+  expressionValid: boolean;
+  sharpnessValid: boolean;
+  exposureValid: boolean;
+  faceDetectionValid: boolean;
+  landmarkQualityValid: boolean;
+  poseQualityValid: boolean;
+  temporalStabilityValid: boolean;
+  reasons: string[];
+  confidence: number;
+}
+
+export interface ViewCaptureSpec {
+  targetYawDeg: number;
+  yawToleranceDeg: number;
+  targetPitchDeg: number;
+  pitchToleranceDeg: number;
+  targetRollDeg: number;
+  rollToleranceDeg: number;
+  minFaceHeightRatio: number;
+  maxFaceHeightRatio: number;
+  centerToleranceX: number;
+  centerToleranceY: number;
+  minLandmarkConfidence: number;
+  minPoseConfidence: number;
+  stableDurationMs: number;
+  requiresSmile: boolean;
+  minSmileScore?: number;
+  requiresFaceLandmarks: boolean;
+}
+
 export interface OrthodonticViewDefinition {
   id: ViewId;
   index: number; // 1 to 11
@@ -37,6 +105,7 @@ export interface OrthodonticViewDefinition {
     | 'left_buccal'
     | 'maxillary_occlusal'
     | 'mandibular_occlusal';
+  captureSpec?: ViewCaptureSpec;
 }
 
 export interface QualityMetric {
@@ -116,6 +185,13 @@ export interface LiveGuidanceState {
     upperLip?: { x: number; y: number };
     lowerLip?: { x: number; y: number };
   };
+
+  // Rigorous CV Evidence Fields
+  readiness?: CaptureReadiness;
+  pose?: FacePose;
+  landmarkQuality?: LandmarkQuality;
+  temporalStability?: TemporalStability;
+  dominantReason?: string;
 }
 
 export interface CapturedPhoto {
@@ -126,6 +202,7 @@ export interface CapturedPhoto {
   quality: QualityCheckResult;
   width: number;
   height: number;
+  manualOverride?: boolean;
 }
 
 export interface ClinicalCase {
@@ -147,7 +224,7 @@ export interface AppSettings {
   autoCaptureDelaySec: number; // e.g. 2 or 3 seconds
   showClinicalGrid: boolean;
   showReferenceLabels: boolean;
-  showFaceMesh: boolean; // Real-time 3D landmark mesh visualization // Lightweight toggle to hide/show textual overlay micro-labels
+  showFaceMesh: boolean; // Real-time 3D landmark mesh visualization
   overlayOpacity: number; // 0.2 to 1.0
   overlayColor: 'emerald' | 'cyan' | 'amber' | 'white';
   soundEffects: boolean;

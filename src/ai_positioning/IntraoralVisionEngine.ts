@@ -126,13 +126,32 @@ export class StandardIntraoralVisionEngine implements IIntraoralVisionEngine {
     const archW = Math.max(0.2, (maxX - minX) / width);
     const archH = Math.max(0.15, (maxY - minY) / height);
 
-    // Lateral views (buccal) don't align to center midline
     const isBuccal = expectedView === 'RIGHT_BUCCAL' || expectedView === 'LEFT_BUCCAL';
     const midlineOffset = isBuccal ? 0 : (centerX - 0.5) * 2;
 
+    // Calculate real edge gradient in enamel region
+    let edgeDiffSum = 0;
+    let lumaSum = 0;
+    let pixelCount = 0;
+    for (let y = minY; y < maxY; y += step) {
+      for (let x = minX; x < maxX; x += step) {
+        const idx = (y * width + x) * 4;
+        const luma = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+        lumaSum += luma;
+        if (x > minX) {
+          const prevIdx = (y * width + (x - step)) * 4;
+          const prevLuma = 0.299 * data[prevIdx] + 0.587 * data[prevIdx + 1] + 0.114 * data[prevIdx + 2];
+          edgeDiffSum += Math.abs(luma - prevLuma);
+        }
+        pixelCount++;
+      }
+    }
+
+    const calculatedSharpness = pixelCount > 0 ? Math.min(100, Math.round((edgeDiffSum / pixelCount) * 5)) : 40;
+
     return {
       detected: true,
-      confidence: Math.min(0.85, 0.5 + coverageRatio * 2),
+      confidence: Math.min(0.85, 0.4 + coverageRatio * 1.5),
       bounds: {
         x: Math.max(0, minX / width),
         y: Math.max(0, minY / height),
@@ -144,12 +163,12 @@ export class StandardIntraoralVisionEngine implements IIntraoralVisionEngine {
       retractorClearanceRatio: Math.min(1.0, archW * 1.3),
       retractorSufficient: archW > 0.45,
       foggingDetected: false,
-      toothSharpnessScore: 82,
+      toothSharpnessScore: calculatedSharpness,
     };
   }
 
   public async detectOcclusalPlane(frame: HTMLCanvasElement | ImageData): Promise<{ angleDeg: number; confidence: number }> {
-    return { angleDeg: 0, confidence: 0.7 };
+    return { angleDeg: 0, confidence: 0.5 };
   }
 
   public async detectMidline(frame: HTMLCanvasElement | ImageData): Promise<{ offsetNorm: number; isCentered: boolean }> {
@@ -169,7 +188,8 @@ export class StandardIntraoralVisionEngine implements IIntraoralVisionEngine {
   }
 
   public async calculateQuality(frame: HTMLCanvasElement | ImageData): Promise<{ sharpness: number; exposure: number; fogging: boolean }> {
-    return { sharpness: 80, exposure: 135, fogging: false };
+    const region = await this.detectDentalRegion(frame, 'ANTERIOR_INTRAORAL');
+    return { sharpness: region.toothSharpnessScore, exposure: 135, fogging: false };
   }
 
   private getEmptyDetection(): DentalArchDetection {

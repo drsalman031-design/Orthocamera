@@ -9,10 +9,12 @@
  */
 
 export interface MotionAnalysisResult {
+  analysisAvailable: boolean;
+  confidence: number;
   motionScore: number; // 0 (completely static) to 100 (rapid motion)
-  isStable: boolean; // True if motion is below threshold
+  isStable: boolean; // True if motion is below threshold and at least 2 frames compared
   motionDetected: boolean;
-  status: 'STATIC' | 'LOW_MOTION' | 'HIGH_MOTION';
+  status: 'STATIC' | 'LOW_MOTION' | 'HIGH_MOTION' | 'UNAVAILABLE';
   measuredLuminance: number; // Mean luminance 0-255
   measuredSharpness: number; // Edge sharpness score 0-100
 }
@@ -39,11 +41,19 @@ export class MotionEngine {
     canvasHeight: number
   ): MotionAnalysisResult {
     try {
+      if (!ctx || canvasWidth <= 0 || canvasHeight <= 0) {
+        return this.getUnavailableResult();
+      }
+
       // Sample a downscaled 80x60 grid from the center 70% of the canvas
       const cropX = Math.round(canvasWidth * 0.15);
       const cropY = Math.round(canvasHeight * 0.15);
       const cropW = Math.round(canvasWidth * 0.7);
       const cropH = Math.round(canvasHeight * 0.7);
+
+      if (cropW <= 0 || cropH <= 0) {
+        return this.getUnavailableResult();
+      }
 
       const frameData = ctx.getImageData(cropX, cropY, cropW, cropH);
       const data = frameData.data;
@@ -68,7 +78,7 @@ export class MotionEngine {
           currentLuma[idx++] = luma;
           sumLuma += luma;
 
-          // Compute horizontal & vertical edge gradient for sharpness
+          // Compute horizontal edge gradient for sharpness
           if (x > 0) {
             edgeSum += Math.abs(luma - currentLuma[idx - 2]);
           }
@@ -79,17 +89,17 @@ export class MotionEngine {
       const measuredLuminance = Math.round(sumLuma / totalPixels);
       const measuredSharpness = Math.min(100, Math.round((edgeSum / totalPixels) * 5));
 
-      // If no previous frame, initialize and return static
+      // If no previous frame, initialize buffer and return isStable = false (needs 2 frames to measure motion)
       if (!this.prevLumaBuffer || this.prevLumaBuffer.length !== currentLuma.length) {
-        if (!this.prevLumaBuffer) {
         this.prevLumaBuffer = new Uint8Array(this.bufferWidth * this.bufferHeight);
-      }
-      this.prevLumaBuffer.set(currentLuma);
+        this.prevLumaBuffer.set(currentLuma);
         return {
+          analysisAvailable: true,
+          confidence: 0.5,
           motionScore: 0,
-          isStable: true,
+          isStable: false, // Must not claim stable on 1st frame before delta is verified
           motionDetected: false,
-          status: 'STATIC',
+          status: 'LOW_MOTION',
           measuredLuminance,
           measuredSharpness,
         };
@@ -102,9 +112,6 @@ export class MotionEngine {
       }
 
       // Update buffer
-      if (!this.prevLumaBuffer) {
-        this.prevLumaBuffer = new Uint8Array(this.bufferWidth * this.bufferHeight);
-      }
       this.prevLumaBuffer.set(currentLuma);
 
       // Normalize diff to a 0-100 scale
@@ -121,10 +128,12 @@ export class MotionEngine {
         this.recentScores.reduce((a, b) => a + b, 0) / this.recentScores.length
       );
 
-      const isStable = smoothedScore < this.staticThreshold;
+      const isStable = smoothedScore < this.staticThreshold && this.recentScores.length >= 2;
       const isHighMotion = smoothedScore >= this.highMotionThreshold;
 
       return {
+        analysisAvailable: true,
+        confidence: Math.min(1.0, 0.4 + this.recentScores.length * 0.15),
         motionScore: smoothedScore,
         isStable,
         motionDetected: !isStable,
@@ -133,15 +142,21 @@ export class MotionEngine {
         measuredSharpness,
       };
     } catch {
-      return {
-        motionScore: 0,
-        isStable: true,
-        motionDetected: false,
-        status: 'STATIC',
-        measuredLuminance: 128,
-        measuredSharpness: 75,
-      };
+      return this.getUnavailableResult();
     }
+  }
+
+  public getUnavailableResult(): MotionAnalysisResult {
+    return {
+      analysisAvailable: false,
+      confidence: 0,
+      motionScore: 100,
+      isStable: false,
+      motionDetected: true,
+      status: 'UNAVAILABLE',
+      measuredLuminance: 0,
+      measuredSharpness: 0,
+    };
   }
 
   public reset(): void {
@@ -149,3 +164,4 @@ export class MotionEngine {
     this.recentScores = [];
   }
 }
+

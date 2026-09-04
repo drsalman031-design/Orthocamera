@@ -183,7 +183,7 @@ const WorkflowHeaderComponent: React.FC<WorkflowHeaderProps> = ({
         {isReady ? (
           <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-950/95 border border-emerald-400 text-emerald-200 text-xs font-bold tracking-wide shadow-[0_0_20px_rgba(16,185,129,0.5)] backdrop-blur-xl animate-in zoom-in-95 duration-200">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
-            <span>PERFECT ALIGNMENT — HOLD STILL</span>
+            <span>CAPTURE READY — HOLD STILL</span>
           </div>
         ) : (
           <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-black/85 border border-white/15 backdrop-blur-xl shadow-lg text-[10px] font-mono">

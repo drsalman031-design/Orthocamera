@@ -1,4 +1,12 @@
-import { LiveGuidanceState, OrthodonticViewDefinition } from '../types';
+import {
+  CaptureReadiness,
+  FacePose,
+  LandmarkQuality,
+  LiveGuidanceState,
+  OrthodonticViewDefinition,
+  TemporalStability,
+  ViewCaptureSpec,
+} from '../types';
 import { FaceAnalysisResult } from './FaceAnalyzer';
 import { IntraoralAnalysisResult } from './IntraoralAnalyzer';
 
@@ -22,52 +30,67 @@ export class OverlayGuidanceEngine {
       rawLuminance = 130,
       rawSharpness = 85,
       motionScore = 0,
-      isStable = true,
+      isStable = false,
       sensitivity = 'medium',
     } = input;
 
-    const res = this.evaluateInternal({
-      view,
-      faceResult,
-      intraoralResult,
-      rawLuminance,
-      rawSharpness,
-      motionScore,
-      isStable,
-      sensitivity,
-    });
-    res.motionScore = motionScore;
-    res.isStable = isStable;
-    return res;
-  }
+    // Spec defaults if not present
+    const spec: ViewCaptureSpec = view.captureSpec || {
+      targetYawDeg: 0,
+      yawToleranceDeg: sensitivity === 'high' ? 5 : sensitivity === 'relaxed' ? 10 : 7,
+      targetPitchDeg: 0,
+      pitchToleranceDeg: sensitivity === 'high' ? 5 : sensitivity === 'relaxed' ? 10 : 7,
+      targetRollDeg: 0,
+      rollToleranceDeg: sensitivity === 'high' ? 3 : sensitivity === 'relaxed' ? 7 : 5,
+      minFaceHeightRatio: sensitivity === 'relaxed' ? 0.28 : sensitivity === 'high' ? 0.38 : 0.32,
+      maxFaceHeightRatio: sensitivity === 'relaxed' ? 0.80 : sensitivity === 'high' ? 0.68 : 0.75,
+      centerToleranceX: sensitivity === 'high' ? 0.10 : sensitivity === 'relaxed' ? 0.20 : 0.15,
+      centerToleranceY: sensitivity === 'high' ? 0.10 : sensitivity === 'relaxed' ? 0.20 : 0.15,
+      minLandmarkConfidence: 0.5,
+      minPoseConfidence: 0.5,
+      stableDurationMs: 600,
+      requiresSmile: view.id === 'FRONTAL_SMILE' || view.id === 'RIGHT_OBLIQUE' || view.id === 'LEFT_OBLIQUE',
+      minSmileScore: 0.28,
+      requiresFaceLandmarks: view.category === 'extraoral',
+    };
 
-  private static evaluateInternal(input: GuidanceEvaluationInput): LiveGuidanceState {
-    const {
-      view,
-      faceResult,
-      intraoralResult,
-      rawLuminance = 130,
-      rawSharpness = 85,
-      sensitivity = 'medium',
-    } = input;
-
-    // Threshold tolerances depending on sensitivity mode
-    const posTolerance = sensitivity === 'high' ? 0.08 : sensitivity === 'relaxed' ? 0.18 : 0.12;
-    const angleTolerance = sensitivity === 'high' ? 3.5 : sensitivity === 'relaxed' ? 8.0 : 5.5;
-    // Adjusted for clinical portrait distance (arm length / 1-1.5 meters)
-    const distanceMinRatio = sensitivity === 'relaxed' ? 0.24 : sensitivity === 'high' ? 0.34 : 0.28;
-    const distanceMaxRatio = sensitivity === 'relaxed' ? 0.82 : sensitivity === 'high' ? 0.70 : 0.76;
-
-    // Default exposure & sharpness validity
     const exposureValid = rawLuminance >= 60 && rawLuminance <= 220;
-    const sharpnessValid = rawSharpness >= 50;
+    const sharpnessValid = rawSharpness >= 45;
+    const temporalStabilityValid = isStable && motionScore < 18;
+
+    const temporalStability: TemporalStability = {
+      stable: temporalStabilityValid,
+      durationMs: temporalStabilityValid ? 600 : 0,
+      positionJitter: motionScore / 100,
+      yawJitterDeg: 0,
+      pitchJitterDeg: 0,
+      rollJitterDeg: 0,
+      confidence: temporalStabilityValid ? 0.9 : 0.2,
+    };
 
     // --- 1. EXTRAORAL PHOTOGRAPHS GUIDANCE ---
-    if (view.category === 'extraoral' && faceResult) {
-      if (!faceResult.detected) {
+    if (view.category === 'extraoral') {
+      if (!faceResult || !faceResult.detected || faceResult.confidence < 0.3) {
+        const readiness: CaptureReadiness = {
+          ready: false,
+          score: 10,
+          positionValid: false,
+          angleValid: false,
+          distanceValid: false,
+          expressionValid: false,
+          sharpnessValid,
+          exposureValid,
+          faceDetectionValid: false,
+          landmarkQualityValid: false,
+          poseQualityValid: false,
+          temporalStabilityValid,
+          reasons: ['FACE_NOT_DETECTED'],
+          confidence: 0,
+        };
+
         return {
           isReady: false,
-          readyScore: 15,
+          readyScore: 10,
           primaryMessage: 'Align patient face in guide',
           statusType: 'searching',
           positionValid: false,
@@ -86,6 +109,10 @@ export class OverlayGuidanceEngine {
           coverageRatio: 0,
           brightnessScore: rawLuminance,
           sharpnessScore: rawSharpness,
+          motionScore,
+          isStable,
+          readiness,
+          dominantReason: 'Align patient face in frame',
         };
       }
 
@@ -95,138 +122,150 @@ export class OverlayGuidanceEngine {
       const yaw = faceResult.yawDeg;
       const pitch = faceResult.pitchDeg;
       const faceRatio = faceResult.faceHeightRatio;
+      const pose: FacePose = faceResult.pose || {
+        yawDeg: yaw,
+        pitchDeg: pitch,
+        rollDeg: roll,
+        confidence: faceResult.confidence,
+        source: 'geometric',
+      };
+      const landmarkQuality: LandmarkQuality = faceResult.landmarkQuality || {
+        available: !!faceResult.landmarks,
+        landmarkCount: faceResult.landmarks ? 11 : 0,
+        requiredLandmarksPresent: !!faceResult.landmarks,
+        symmetryScore: 0.7,
+        geometryScore: 0.7,
+        confidence: faceResult.confidence,
+      };
 
-      let positionValid = true;
+      // 1. Face & Landmark Quality Check
+      const faceDetectionValid = faceResult.detected && faceResult.confidence >= 0.35;
+      const landmarkQualityValid = spec.requiresFaceLandmarks
+        ? landmarkQuality.available && landmarkQuality.confidence >= spec.minLandmarkConfidence
+        : true;
+      const poseQualityValid = pose.source !== 'unavailable' && pose.confidence >= spec.minPoseConfidence;
+
+      // 2. Position / Centering Check
+      const positionValid =
+        Math.abs(deltaX) <= spec.centerToleranceX &&
+        Math.abs(deltaY) <= spec.centerToleranceY + 0.05;
+
       let positionMessage = 'Position ✓';
+      if (!positionValid) {
+        if (Math.abs(deltaX) > spec.centerToleranceX) {
+          positionMessage = deltaX > 0 ? 'Move camera right / Center face' : 'Move camera left / Center face';
+        } else {
+          positionMessage = deltaY > 0 ? 'Move camera up' : 'Move camera down';
+        }
+      }
+
+      // 3. Distance Check
+      const distanceValid = faceRatio >= spec.minFaceHeightRatio && faceRatio <= spec.maxFaceHeightRatio;
+      let distanceMessage = 'Distance ✓';
+      if (!distanceValid) {
+        distanceMessage = faceRatio < spec.minFaceHeightRatio ? 'Move closer' : 'Step back';
+      }
+
+      // 4. Angle / Pose Check against View Target
       let angleValid = true;
       let angleMessage = 'Angle ✓';
-      let distanceValid = true;
-      let distanceMessage = 'Distance ✓';
-      let primaryMessage = 'Hold steady';
 
-      // Distance check
-      if (faceRatio < distanceMinRatio) {
-        distanceValid = false;
-        distanceMessage = 'Move closer';
-        primaryMessage = 'Move closer to patient';
-      } else if (faceRatio > distanceMaxRatio) {
-        distanceValid = false;
-        distanceMessage = 'Move back';
-        primaryMessage = 'Step back slightly';
+      const rollError = Math.abs(roll - spec.targetRollDeg);
+      const yawError = Math.abs(yaw - spec.targetYawDeg);
+      const pitchError = Math.abs(pitch - spec.targetPitchDeg);
+
+      if (rollError > spec.rollToleranceDeg) {
+        angleValid = false;
+        angleMessage = roll > spec.targetRollDeg ? 'Level head (tilt left)' : 'Level head (tilt right)';
+      } else if (yawError > spec.yawToleranceDeg) {
+        angleValid = false;
+        angleMessage = yaw > spec.targetYawDeg ? 'Turn head slightly left' : 'Turn head slightly right';
+      } else if (pitchError > spec.pitchToleranceDeg) {
+        angleValid = false;
+        angleMessage = pitch > spec.targetPitchDeg ? 'Lower chin slightly' : 'Raise chin slightly';
       }
 
-      // Centering check
-      if (Math.abs(deltaX) > posTolerance) {
-        positionValid = false;
-        if (deltaX > 0) {
-          positionMessage = 'Move camera right / Center face';
-          primaryMessage = 'Center face in frame';
-        } else {
-          positionMessage = 'Move camera left / Center face';
-          primaryMessage = 'Center face in frame';
-        }
-      } else if (Math.abs(deltaY) > posTolerance + 0.05) {
-        positionValid = false;
-        positionMessage = deltaY > 0 ? 'Move camera up' : 'Move camera down';
-        primaryMessage = deltaY > 0 ? 'Raise camera slightly' : 'Lower camera slightly';
-      }
-
-      // Specific angular rules based on exact extraoral view
-      switch (view.id) {
-        case 'FRONTAL_REST':
-        case 'FRONTAL_SMILE': {
-          // Head roll (tilt) check
-          if (Math.abs(roll) > angleTolerance) {
-            angleValid = false;
-            angleMessage = roll > 0 ? 'Level head (tilt left)' : 'Level head (tilt right)';
-            primaryMessage = 'Level head with horizontal plane';
-          }
-          // Head yaw (rotation) check
-          else if (Math.abs(yaw) > angleTolerance + 3) {
-            angleValid = false;
-            angleMessage = yaw > 0 ? 'Turn slightly left' : 'Turn slightly right';
-            primaryMessage = yaw > 0 ? 'Patient turn slightly left' : 'Patient turn slightly right';
-          }
-          // Head pitch (chin up/down)
-          else if (Math.abs(pitch) > angleTolerance + 4) {
-            angleValid = false;
-            angleMessage = pitch > 0 ? 'Lower chin slightly' : 'Raise chin slightly';
-            primaryMessage = pitch > 0 ? 'Lower chin slightly' : 'Raise chin slightly';
-          }
-          break;
-        }
-
-        case 'RIGHT_PROFILE': {
-          // Patient should face 90 deg right (yaw ~ 75° - 90°)
-          if (yaw < 50) {
-            angleValid = false;
-            angleMessage = 'Turn head more right (90°)';
-            primaryMessage = 'Turn patient 90° right for profile';
-          } else if (Math.abs(roll) > angleTolerance + 2) {
-            angleValid = false;
-            angleMessage = 'Level Frankfort plane';
-            primaryMessage = 'Keep Frankfort plane horizontal';
-          }
-          break;
-        }
-
-        case 'LEFT_PROFILE': {
-          // Patient should face 90 deg left (yaw ~ -75° to -90°)
-          if (yaw > -50) {
-            angleValid = false;
-            angleMessage = 'Turn head more left (90°)';
-            primaryMessage = 'Turn patient 90° left for profile';
-          } else if (Math.abs(roll) > angleTolerance + 2) {
-            angleValid = false;
-            angleMessage = 'Level Frankfort plane';
-            primaryMessage = 'Keep Frankfort plane horizontal';
-          }
-          break;
-        }
-
-        case 'RIGHT_OBLIQUE': {
-          // 45 degree turn right
-          if (yaw < 25 || yaw > 60) {
-            angleValid = false;
-            angleMessage = yaw < 25 ? 'Turn patient more right' : 'Turn patient slightly back';
-            primaryMessage = 'Rotate 45° for right oblique';
-          }
-          break;
-        }
-
-        case 'LEFT_OBLIQUE': {
-          // 45 degree turn left
-          if (yaw > -25 || yaw < -60) {
-            angleValid = false;
-            angleMessage = yaw > -25 ? 'Turn patient more left' : 'Turn patient slightly back';
-            primaryMessage = 'Rotate 45° for left oblique';
-          }
-          break;
+      // 5. Expression Check
+      let expressionValid = true;
+      if (spec.requiresSmile) {
+        const minSmile = spec.minSmileScore ?? 0.28;
+        if (faceResult.smileScore < minSmile) {
+          expressionValid = false;
         }
       }
 
-      // Check smile for Frontal Smile view
-      if (view.id === 'FRONTAL_SMILE' && positionValid && angleValid && distanceValid) {
-        if (faceResult.smileScore < 0.35) {
-          primaryMessage = 'Instruct patient to smile fully';
-        }
-      }
+      // Aggregate Readiness Reasons (prioritized)
+      const reasons: string[] = [];
+      if (!faceDetectionValid) reasons.push('FACE_NOT_DETECTED');
+      if (!landmarkQualityValid) reasons.push('LANDMARKS_UNRELIABLE');
+      if (!poseQualityValid) reasons.push('POSE_UNRELIABLE');
+      if (!positionValid) reasons.push(deltaX > 0 ? 'MOVE_CAMERA_RIGHT' : 'MOVE_CAMERA_LEFT');
+      if (!distanceValid) reasons.push(faceRatio < spec.minFaceHeightRatio ? 'MOVE_CLOSER' : 'STEP_BACK');
+      if (!angleValid) reasons.push(angleMessage.toUpperCase().replace(/\s+/g, '_'));
+      if (!expressionValid) reasons.push('SMILE_REQUIRED');
+      if (!sharpnessValid) reasons.push('IMAGE_BLURRY');
+      if (!exposureValid) reasons.push('ADJUST_LIGHTING');
+      if (!temporalStabilityValid) reasons.push('HOLD_STILL');
 
-      const allValid = positionValid && angleValid && distanceValid && sharpnessValid && exposureValid;
+      const allValid =
+        faceDetectionValid &&
+        landmarkQualityValid &&
+        poseQualityValid &&
+        positionValid &&
+        distanceValid &&
+        angleValid &&
+        expressionValid &&
+        sharpnessValid &&
+        exposureValid &&
+        temporalStabilityValid;
+
+      const score = Math.round(
+        (faceDetectionValid ? 15 : 0) +
+        (landmarkQualityValid ? 15 : 0) +
+        (poseQualityValid ? 15 : 0) +
+        (positionValid ? 15 : 0) +
+        (distanceValid ? 10 : 0) +
+        (angleValid ? 15 : 0) +
+        (expressionValid ? 10 : 0) +
+        (temporalStabilityValid ? 5 : 0)
+      );
+
+      const readiness: CaptureReadiness = {
+        ready: allValid,
+        score,
+        positionValid,
+        angleValid,
+        distanceValid,
+        expressionValid,
+        sharpnessValid,
+        exposureValid,
+        faceDetectionValid,
+        landmarkQualityValid,
+        poseQualityValid,
+        temporalStabilityValid,
+        reasons,
+        confidence: (pose.confidence + landmarkQuality.confidence) / 2,
+      };
+
+      // Determine clean primary UI message
+      let primaryMessage = 'Adjust Alignment';
       if (allValid) {
-        primaryMessage = view.id === 'FRONTAL_SMILE' ? 'FACE CENTERED • READY' : '🟢 READY';
+        primaryMessage = 'CAPTURE READY — HOLD STILL';
+      } else if (!temporalStabilityValid && isStable === false && motionScore > 20) {
+        primaryMessage = 'Hold steady (device motion detected)';
+      } else if (!expressionValid && spec.requiresSmile) {
+        primaryMessage = 'Instruct patient to smile naturally';
+      } else if (!positionValid) {
+        primaryMessage = positionMessage;
+      } else if (!distanceValid) {
+        primaryMessage = distanceMessage;
+      } else if (!angleValid) {
+        primaryMessage = angleMessage;
       }
-
-      const readyScore =
-        (positionValid ? 25 : 5) +
-        (angleValid ? 25 : 5) +
-        (distanceValid ? 25 : 5) +
-        (sharpnessValid ? 15 : 0) +
-        (exposureValid ? 10 : 0);
 
       return {
         isReady: allValid,
-        readyScore,
+        readyScore: score,
         primaryMessage,
         statusType: allValid ? 'ready' : 'adjust',
         positionValid,
@@ -245,175 +284,160 @@ export class OverlayGuidanceEngine {
         coverageRatio: faceRatio,
         brightnessScore: rawLuminance,
         sharpnessScore: rawSharpness,
+        motionScore,
+        isStable,
         isExtraoralDetected: true,
         aiEngine: faceResult.aiEngine || 'chroma',
         meshContours: faceResult.meshContours,
         smileIntensity: faceResult.smileScore,
         detectedFaceLandmarks: faceResult.landmarks,
+        readiness,
+        pose,
+        landmarkQuality,
+        temporalStability,
+        dominantReason: reasons[0] || 'READY',
       };
     }
 
     // --- 2. INTRAORAL PHOTOGRAPHS GUIDANCE ---
-    if (view.category === 'intraoral') {
-      const intra = intraoralResult;
-
-      if (!intra || !intra.detected) {
-        return {
-          isReady: false,
-          readyScore: 15,
-          primaryMessage: 'Align dental arch in guide',
-          statusType: 'searching',
-          positionValid: false,
-          positionMessage: 'Teeth not detected',
-          angleValid: false,
-          angleMessage: 'Position arch',
-          distanceValid: false,
-          distanceMessage: 'Adjust distance',
-          sharpnessValid,
-          exposureValid,
-          headRollDeg: 0,
-          headYawDeg: 0,
-          headPitchDeg: 0,
-          centeringDeltaX: 0,
-          centeringDeltaY: 0,
-          coverageRatio: 0,
-          brightnessScore: rawLuminance,
-          sharpnessScore: rawSharpness,
-        };
-      }
-
-      let positionValid = true;
-      let positionMessage = 'Position ✓';
-      let angleValid = true;
-      let angleMessage = 'Angle ✓';
-      let distanceValid = true;
-      let distanceMessage = 'Distance ✓';
-      let primaryMessage = 'Hold steady';
-
-      // Distance / coverage check
-      if (intra.archCoverageRatio < 0.6) {
-        distanceValid = false;
-        distanceMessage = 'Move closer';
-        primaryMessage = 'Move closer to dental arch';
-      } else if (intra.archCoverageRatio > 1.1) {
-        distanceValid = false;
-        distanceMessage = 'Increase distance';
-        primaryMessage = 'Increase distance slightly';
-      }
-
-      // Dental midline / quadrant positioning check
-      if (view.id === 'ANTERIOR_INTRAORAL') {
-        if (Math.abs(intra.dentalMidlineOffset) > posTolerance * 1.5) {
-          positionValid = false;
-          positionMessage = intra.dentalMidlineOffset > 0 ? 'Move camera left' : 'Move camera right';
-          primaryMessage = 'Center dental midline (#8-#9)';
-        }
-        if (Math.abs(intra.occlusalPlaneTiltDeg) > angleTolerance) {
-          angleValid = false;
-          angleMessage = 'Level camera';
-          primaryMessage = 'Level occlusal plane horizontally';
-        }
-        if (!intra.retractorAdequate) {
-          primaryMessage = 'Retract cheeks outward & forward';
-        }
-      } else if (view.id === 'RIGHT_BUCCAL') {
-        if (Math.abs(intra.occlusalPlaneTiltDeg) > angleTolerance + 2) {
-          angleValid = false;
-          angleMessage = 'Level camera';
-          primaryMessage = 'Level occlusal plane';
-        }
-        if (intra.archCoverageRatio < 0.65) {
-          positionMessage = 'Show more posterior teeth';
-          primaryMessage = 'Show right molars (pull right retractor back)';
-        }
-      } else if (view.id === 'LEFT_BUCCAL') {
-        if (Math.abs(intra.occlusalPlaneTiltDeg) > angleTolerance + 2) {
-          angleValid = false;
-          angleMessage = 'Level camera';
-          primaryMessage = 'Level occlusal plane';
-        }
-        if (intra.archCoverageRatio < 0.65) {
-          positionMessage = 'Show more posterior teeth';
-          primaryMessage = 'Show left molars (pull left retractor back)';
-        }
-      } else if (view.id === 'MAXILLARY_OCCLUSAL') {
-        if (intra.mirrorFoggingDetected) {
-          primaryMessage = 'Defog mirror with air syringe';
-        } else if (intra.archCoverageRatio < 0.7) {
-          primaryMessage = 'Capture entire maxillary arch to 2nd molars';
-        }
-      } else if (view.id === 'MANDIBULAR_OCCLUSAL') {
-        if (intra.mirrorFoggingDetected) {
-          primaryMessage = 'Defog mirror with air syringe';
-        } else if (intra.archCoverageRatio < 0.7) {
-          primaryMessage = 'Retract tongue & capture full mandibular arch';
-        }
-      }
-
-      const allValid = positionValid && angleValid && distanceValid && sharpnessValid && exposureValid;
-      if (allValid) {
-        primaryMessage = '🟢 READY';
-      }
-
-      const readyScore =
-        (positionValid ? 25 : 5) +
-        (angleValid ? 25 : 5) +
-        (distanceValid ? 25 : 5) +
-        (sharpnessValid ? 15 : 0) +
-        (exposureValid ? 10 : 0);
-
-      return {
-        isReady: allValid,
-        readyScore,
-        primaryMessage,
-        statusType: allValid ? 'ready' : 'adjust',
-        positionValid,
-        positionMessage,
-        angleValid,
-        angleMessage,
-        distanceValid,
-        distanceMessage,
+    const intra = intraoralResult;
+    if (!intra || !intra.detected) {
+      const readiness: CaptureReadiness = {
+        ready: false,
+        score: 10,
+        positionValid: false,
+        angleValid: false,
+        distanceValid: false,
+        expressionValid: false,
         sharpnessValid,
         exposureValid,
-        headRollDeg: intra.occlusalPlaneTiltDeg,
+        faceDetectionValid: false,
+        landmarkQualityValid: true,
+        poseQualityValid: true,
+        temporalStabilityValid,
+        reasons: ['TEETH_NOT_DETECTED'],
+        confidence: 0,
+      };
+
+      return {
+        isReady: false,
+        readyScore: 10,
+        primaryMessage: 'Align dental arch in guide',
+        statusType: 'searching',
+        positionValid: false,
+        positionMessage: 'Teeth not detected',
+        angleValid: false,
+        angleMessage: 'Position arch',
+        distanceValid: false,
+        distanceMessage: 'Adjust distance',
+        sharpnessValid,
+        exposureValid,
+        headRollDeg: 0,
         headYawDeg: 0,
         headPitchDeg: 0,
-        // Midline match only applies to anterior intraoral; buccal views center on canine-molar segment
-        centeringDeltaX:
-          view.id === 'RIGHT_BUCCAL' || view.id === 'LEFT_BUCCAL' || view.id.includes('OCCLUSAL')
-            ? 0
-            : intra.dentalMidlineOffset,
+        centeringDeltaX: 0,
         centeringDeltaY: 0,
-        coverageRatio: intra.archCoverageRatio,
-        brightnessScore: intra.intraoralExposureScore,
-        sharpnessScore: intra.toothRegionSharpness,
-        isIntraoralDetected: true,
-        aiEngine: intra.aiEngine || 'chroma',
+        coverageRatio: 0,
+        brightnessScore: rawLuminance,
+        sharpnessScore: rawSharpness,
+        motionScore,
+        isStable,
+        readiness,
+        dominantReason: 'Align dental arch in frame',
       };
     }
 
-    // Default
+    const midlineValid = view.id !== 'ANTERIOR_INTRAORAL' || Math.abs(intra.dentalMidlineOffset) <= 0.25;
+    const distanceValid = intra.archCoverageRatio >= 0.55 && intra.archCoverageRatio <= 1.2;
+    const angleValid = Math.abs(intra.occlusalPlaneTiltDeg) <= 8;
+    const retractorValid = intra.retractorAdequate;
+
+    const reasons: string[] = [];
+    if (!midlineValid) reasons.push('CENTER_DENTAL_MIDLINE');
+    if (!distanceValid) reasons.push(intra.archCoverageRatio < 0.55 ? 'MOVE_CLOSER' : 'INCREASE_DISTANCE');
+    if (!angleValid) reasons.push('LEVEL_OCCLUSAL_PLANE');
+    if (!retractorValid) reasons.push('PULL_RETRACTORS_OUTWARD');
+    if (!sharpnessValid) reasons.push('IMAGE_BLURRY');
+    if (!exposureValid) reasons.push('ADJUST_LIGHTING');
+    if (!temporalStabilityValid) reasons.push('HOLD_STILL');
+
+    const allValid =
+      midlineValid &&
+      distanceValid &&
+      angleValid &&
+      retractorValid &&
+      sharpnessValid &&
+      exposureValid &&
+      temporalStabilityValid;
+
+    const score = Math.round(
+      (midlineValid ? 25 : 5) +
+      (distanceValid ? 25 : 5) +
+      (angleValid ? 20 : 5) +
+      (retractorValid ? 15 : 0) +
+      (temporalStabilityValid ? 15 : 0)
+    );
+
+    const readiness: CaptureReadiness = {
+      ready: allValid,
+      score,
+      positionValid: midlineValid,
+      angleValid,
+      distanceValid,
+      expressionValid: retractorValid,
+      sharpnessValid,
+      exposureValid,
+      faceDetectionValid: true,
+      landmarkQualityValid: true,
+      poseQualityValid: true,
+      temporalStabilityValid,
+      reasons,
+      confidence: intra.confidence,
+    };
+
+    let primaryMessage = 'Adjust Intraoral Alignment';
+    if (allValid) {
+      primaryMessage = 'CAPTURE READY — HOLD STILL';
+    } else if (!temporalStabilityValid) {
+      primaryMessage = 'Hold steady (device motion detected)';
+    } else if (!retractorValid) {
+      primaryMessage = 'Pull cheek retractors outward';
+    } else if (!midlineValid) {
+      primaryMessage = 'Center maxillary dental midline';
+    } else if (!distanceValid) {
+      primaryMessage = intra.archCoverageRatio < 0.55 ? 'Move camera closer to teeth' : 'Increase distance';
+    } else if (!angleValid) {
+      primaryMessage = 'Level occlusal plane horizontally';
+    }
+
     return {
-      isReady: true,
-      readyScore: 90,
-      primaryMessage: '🟢 READY',
-      statusType: 'ready',
-      positionValid: true,
-      positionMessage: 'Position ✓',
-      angleValid: true,
-      angleMessage: 'Angle ✓',
-      distanceValid: true,
-      distanceMessage: 'Distance ✓',
-      sharpnessValid: true,
-      exposureValid: true,
-      headRollDeg: 0,
+      isReady: allValid,
+      readyScore: score,
+      primaryMessage,
+      statusType: allValid ? 'ready' : 'adjust',
+      positionValid: midlineValid,
+      positionMessage: midlineValid ? 'Position ✓' : 'Center dental midline',
+      angleValid,
+      angleMessage: angleValid ? 'Angle ✓' : 'Level occlusal plane',
+      distanceValid,
+      distanceMessage: distanceValid ? 'Distance ✓' : 'Adjust distance',
+      sharpnessValid,
+      exposureValid,
+      headRollDeg: intra.occlusalPlaneTiltDeg,
       headYawDeg: 0,
       headPitchDeg: 0,
-      centeringDeltaX: 0,
+      centeringDeltaX: intra.dentalMidlineOffset,
       centeringDeltaY: 0,
-      coverageRatio: 0.7,
-      brightnessScore: 130,
-      sharpnessScore: 85,
+      coverageRatio: intra.archCoverageRatio,
+      brightnessScore: intra.intraoralExposureScore || rawLuminance,
+      sharpnessScore: intra.toothRegionSharpness || rawSharpness,
+      motionScore,
+      isStable,
+      isIntraoralDetected: true,
+      aiEngine: intra.aiEngine || 'chroma',
+      readiness,
+      temporalStability,
+      dominantReason: reasons[0] || 'READY',
     };
   }
 }

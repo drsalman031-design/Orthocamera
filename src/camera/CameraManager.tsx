@@ -55,6 +55,14 @@ function mirrorFaceResult(result: FaceAnalysisResult): FaceAnalysisResult {
       ...result.boundingBox,
       x: Math.max(0, 1.0 - (result.boundingBox.x + result.boundingBox.width)),
     },
+    pose: result.pose
+      ? {
+          ...result.pose,
+          yawDeg: result.pose.yawDeg !== null ? -result.pose.yawDeg : null,
+          rollDeg: result.pose.rollDeg !== null ? -result.pose.rollDeg : null,
+        }
+      : undefined,
+    landmarkQuality: result.landmarkQuality,
     meshContours: result.meshContours
       ? {
           faceOval: result.meshContours.faceOval.map((p) => ({ x: 1.0 - p.x, y: p.y })),

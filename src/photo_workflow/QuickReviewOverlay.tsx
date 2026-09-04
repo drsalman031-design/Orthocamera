@@ -150,7 +150,7 @@ export const QuickReviewOverlay: React.FC<QuickReviewOverlayProps> = ({
           )}
         </div>
 
-        {/* Action Buttons: DISCARD / RETAKE vs USE PHOTO */}
+        {/* Action Buttons: DISCARD / RETAKE vs USE PHOTO (or MANUAL OVERRIDE) */}
         <div className="flex items-center gap-2.5">
           <button
             onClick={onDiscard || onRetake}
@@ -161,27 +161,48 @@ export const QuickReviewOverlay: React.FC<QuickReviewOverlayProps> = ({
             <span className="hidden sm:inline">Discard</span>
           </button>
 
-          <button
-            onClick={onRetake}
-            className="flex-1 py-3.5 px-3 rounded-xl border border-slate-700/70 bg-slate-900/90 hover:bg-slate-800 active:scale-98 text-slate-200 font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-md"
-          >
-            <RotateCcw className="w-4 h-4 text-slate-400" />
-            <span>Retake</span>
-          </button>
+          {isRecommendedAccept ? (
+            <>
+              <button
+                onClick={onRetake}
+                className="flex-1 py-3.5 px-3 rounded-xl border border-slate-700/70 bg-slate-900/90 hover:bg-slate-800 active:scale-98 text-slate-200 font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-md"
+              >
+                <RotateCcw className="w-4 h-4 text-slate-400" />
+                <span>Retake</span>
+              </button>
 
-          <button
-            onClick={onAccept}
-            className="flex-[1.5] py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-400 hover:from-emerald-400 hover:to-emerald-300 active:scale-98 text-slate-950 font-bold text-sm shadow-[0_0_20px_rgba(16,185,129,0.4)] flex items-center justify-center gap-2 transition-all"
-          >
-            <span>Use Photo</span>
-            {nextViewName ? (
-              <span className="flex items-center gap-1 font-semibold text-xs text-slate-950/90">
-                (Next: {nextViewName}) <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
-              </span>
-            ) : (
-              <ArrowRight className="w-4 h-4 stroke-[2.5]" />
-            )}
-          </button>
+              <button
+                onClick={onAccept}
+                className="flex-[1.5] py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-400 hover:from-emerald-400 hover:to-emerald-300 active:scale-98 text-slate-950 font-bold text-sm shadow-[0_0_20px_rgba(16,185,129,0.4)] flex items-center justify-center gap-2 transition-all"
+              >
+                <span>Use Photo</span>
+                {nextViewName ? (
+                  <span className="flex items-center gap-1 font-semibold text-xs text-slate-950/90">
+                    (Next: {nextViewName}) <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                  </span>
+                ) : (
+                  <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+                )}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={onAccept}
+                className="flex-1 py-3.5 px-3 rounded-xl border border-amber-700/70 bg-amber-950/40 hover:bg-amber-900/60 active:scale-98 text-amber-200 font-semibold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md"
+              >
+                <span>Use Anyway (Override)</span>
+              </button>
+
+              <button
+                onClick={onRetake}
+                className="flex-[1.5] py-3.5 px-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 active:scale-98 text-slate-950 font-bold text-sm shadow-[0_0_20px_rgba(6,182,212,0.4)] flex items-center justify-center gap-2 transition-all"
+              >
+                <RotateCcw className="w-4 h-4 text-slate-950 stroke-[2.5]" />
+                <span>Retake Photo</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
