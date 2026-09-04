@@ -183,63 +183,97 @@ const WorkflowHeaderComponent: React.FC<WorkflowHeaderProps> = ({
         {isReady ? (
           <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-950/95 border border-emerald-400 text-emerald-200 text-xs font-bold tracking-wide shadow-[0_0_20px_rgba(16,185,129,0.5)] backdrop-blur-xl animate-in zoom-in-95 duration-200">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
+            <span className="font-mono text-emerald-300">100% ALIGNED</span>
+            <span className="text-emerald-500">•</span>
             <span>CAPTURE READY — HOLD STILL</span>
           </div>
         ) : (
-          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-black/85 border border-white/15 backdrop-blur-xl shadow-lg text-[10px] font-mono">
-            {/* Position */}
-            <span
-              className={`flex items-center gap-1 font-bold ${
-                guidance.positionValid ? 'text-emerald-400' : 'text-slate-400'
-              }`}
-            >
-              {guidance.positionValid ? (
-                <Check className="w-3 h-3 text-emerald-400 stroke-[3]" />
-              ) : (
-                <AlertCircle className="w-3 h-3 text-amber-400" />
-              )}
-              POS
-            </span>
+          <div className="flex flex-col items-center gap-1.5">
+            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-black/85 border border-white/15 backdrop-blur-xl shadow-lg text-[10px] font-mono">
+              {/* Continuous Score Pill */}
+              <span className="flex items-center gap-1 font-bold text-cyan-300">
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    guidance.readyScore >= 70
+                      ? 'bg-emerald-400'
+                      : guidance.readyScore >= 40
+                      ? 'bg-amber-400'
+                      : 'bg-slate-500'
+                  }`}
+                />
+                {guidance.readyScore}% ALIGNED
+              </span>
 
-            <span className="text-slate-600 text-[8px] font-bold">•</span>
+              <span className="text-slate-600 text-[8px] font-bold">•</span>
 
-            {/* Angle */}
-            <span
-              className={`flex items-center gap-1 font-bold ${
-                guidance.angleValid ? 'text-emerald-400' : 'text-slate-400'
-              }`}
-            >
-              {guidance.angleValid ? (
-                <Check className="w-3 h-3 text-emerald-400 stroke-[3]" />
-              ) : (
-                <AlertCircle className="w-3 h-3 text-amber-400" />
-              )}
-              ANG
-            </span>
+              {/* Position */}
+              <span
+                className={`flex items-center gap-0.5 font-bold ${
+                  guidance.positionValid ? 'text-emerald-400' : 'text-slate-400'
+                }`}
+              >
+                {guidance.positionValid ? (
+                  <Check className="w-3 h-3 stroke-[3]" />
+                ) : (
+                  <AlertCircle className="w-3 h-3 text-amber-400" />
+                )}
+                CENTER
+              </span>
 
-            <span className="text-slate-600 text-[8px] font-bold">•</span>
+              <span className="text-slate-600 text-[8px] font-bold">•</span>
 
-            {/* Distance */}
-            <span
-              className={`flex items-center gap-1 font-bold ${
-                guidance.distanceValid ? 'text-emerald-400' : 'text-slate-400'
-              }`}
-            >
-              {guidance.distanceValid ? (
-                <Check className="w-3 h-3 text-emerald-400 stroke-[3]" />
-              ) : (
-                <AlertCircle className="w-3 h-3 text-amber-400" />
-              )}
-              DIST
-            </span>
+              {/* Angle */}
+              <span
+                className={`flex items-center gap-0.5 font-bold ${
+                  guidance.angleValid ? 'text-emerald-400' : 'text-slate-400'
+                }`}
+              >
+                {guidance.angleValid ? (
+                  <Check className="w-3 h-3 stroke-[3]" />
+                ) : (
+                  <AlertCircle className="w-3 h-3 text-amber-400" />
+                )}
+                ANGLE
+              </span>
 
+              <span className="text-slate-600 text-[8px] font-bold">•</span>
+
+              {/* Distance */}
+              <span
+                className={`flex items-center gap-0.5 font-bold ${
+                  guidance.distanceValid ? 'text-emerald-400' : 'text-slate-400'
+                }`}
+              >
+                {guidance.distanceValid ? (
+                  <Check className="w-3 h-3 stroke-[3]" />
+                ) : (
+                  <AlertCircle className="w-3 h-3 text-amber-400" />
+                )}
+                DISTANCE
+              </span>
+
+              <span className="text-slate-600 text-[8px] font-bold">•</span>
+
+              {/* Stability */}
+              <span
+                className={`flex items-center gap-0.5 font-bold ${
+                  guidance.isStable ? 'text-emerald-400' : 'text-slate-400'
+                }`}
+              >
+                {guidance.isStable ? (
+                  <Check className="w-3 h-3 stroke-[3]" />
+                ) : (
+                  <AlertCircle className="w-3 h-3 text-amber-400" />
+                )}
+                STABLE
+              </span>
+            </div>
+
+            {/* Single Highest-Priority Guidance Message */}
             {guidance.primaryMessage && (
-              <>
-                <span className="text-slate-600 text-[8px] font-bold">•</span>
-                <span className="text-cyan-300 font-medium truncate max-w-[150px]">
-                  {guidance.primaryMessage}
-                </span>
-              </>
+              <div className="px-3 py-0.5 rounded-full bg-slate-900/90 border border-slate-700/80 text-[11px] font-sans font-semibold text-cyan-300 shadow-md">
+                {guidance.primaryMessage}
+              </div>
             )}
           </div>
         )}

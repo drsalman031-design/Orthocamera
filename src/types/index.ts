@@ -192,6 +192,22 @@ export interface LiveGuidanceState {
   landmarkQuality?: LandmarkQuality;
   temporalStability?: TemporalStability;
   dominantReason?: string;
+  alignmentScore?: number; // Continuous 0 to 100
+  alignmentCorrection?: {
+    direction:
+      | 'LEFT'
+      | 'RIGHT'
+      | 'UP'
+      | 'DOWN'
+      | 'ROTATE_LEFT'
+      | 'ROTATE_RIGHT'
+      | 'MOVE_CLOSER'
+      | 'MOVE_BACK'
+      | 'HOLD_STILL'
+      | 'READY';
+    magnitude: number;
+    message: string;
+  };
 }
 
 export interface CapturedPhoto {

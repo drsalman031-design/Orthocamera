@@ -21,7 +21,7 @@ import { AndroidGuideModal } from './components/AndroidGuideModal';
 import { GhostOverlayManager } from './overlay/GhostOverlayManager';
 import { DiagnosticsHUD } from './components/DiagnosticsHUD';
 import { HysteresisController } from './ai_positioning/HysteresisController';
-import { Check } from 'lucide-react';
+import { Check, AlertCircle } from 'lucide-react';
 
 const DEFAULT_SETTINGS: AppSettings = {
   autoCaptureEnabled: true,
@@ -227,7 +227,25 @@ export default function App() {
   const handlePhotoCaptured = useCallback(
     (photo: CapturedPhoto) => {
       // 1. Immediately save directly to phone storage & camera gallery
-      const saveRes = GalleryStorage.savePhotoToGallery(photo, activeCase, currentView);
+      GalleryStorage.savePhotoToGallery(photo, activeCase, currentView).then((saveRes) => {
+        if (saveRes.success && saveRes.method === 'gallery') {
+          setGalleryToast({
+            message: 'Saved to Gallery',
+            filename: `${saveRes.filename} (Pictures/Orthocamera)`,
+          });
+        } else if (saveRes.success && saveRes.method === 'downloads') {
+          setGalleryToast({
+            message: 'Saved to Downloads',
+            filename: saveRes.filename,
+          });
+        } else {
+          setGalleryToast({
+            message: 'Save Failed',
+            filename: saveRes.error || saveRes.filename,
+          });
+        }
+        setTimeout(() => setGalleryToast(null), 3500);
+      });
 
       // Keep in-memory for live progress rail and recent thumbnail
       const updatedPhotos = {
@@ -240,13 +258,6 @@ export default function App() {
         updatedAt: Date.now(),
       };
       setActiveCase(updatedCase);
-
-      // Show clear confirmation toast that photo is in device gallery
-      setGalleryToast({
-        message: 'Saved Directly to Phone Gallery',
-        filename: saveRes.filename,
-      });
-      setTimeout(() => setGalleryToast(null), 3000);
 
       // 2. Audio & Haptic confirmation feedback
       playCaptureChime();
@@ -498,13 +509,35 @@ export default function App() {
       {/* Toast Notification: Phone Storage / Gallery Save Confirmation */}
       {galleryToast && (
         <div className="fixed top-12 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top duration-300 pointer-events-none">
-          <div className="bg-emerald-950/95 border border-emerald-500/70 text-emerald-200 px-4 py-2 rounded-full shadow-[0_0_25px_rgba(16,185,129,0.5)] backdrop-blur-xl flex items-center gap-2.5 text-xs font-medium">
-            <div className="w-5 h-5 rounded-full bg-emerald-500/30 flex items-center justify-center shrink-0">
-              <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[3]" />
+          <div
+            className={`border px-4 py-2 rounded-full shadow-[0_0_25px_rgba(16,185,129,0.5)] backdrop-blur-xl flex items-center gap-2.5 text-xs font-medium ${
+              galleryToast.message === 'Save Failed'
+                ? 'bg-rose-950/95 border-rose-500/70 text-rose-200'
+                : 'bg-emerald-950/95 border-emerald-500/70 text-emerald-200'
+            }`}
+          >
+            <div
+              className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
+                galleryToast.message === 'Save Failed'
+                  ? 'bg-rose-500/30 text-rose-400'
+                  : 'bg-emerald-500/30 text-emerald-400'
+              }`}
+            >
+              {galleryToast.message === 'Save Failed' ? (
+                <AlertCircle className="w-3.5 h-3.5 stroke-[2.5]" />
+              ) : (
+                <Check className="w-3.5 h-3.5 stroke-[3]" />
+              )}
             </div>
             <div className="text-left">
               <span className="font-bold text-white block">{galleryToast.message}</span>
-              <span className="font-mono text-[10px] text-emerald-300/90">{galleryToast.filename}</span>
+              <span
+                className={`font-mono text-[10px] ${
+                  galleryToast.message === 'Save Failed' ? 'text-rose-300/90' : 'text-emerald-300/90'
+                }`}
+              >
+                {galleryToast.filename}
+              </span>
             </div>
           </div>
         </div>
@@ -524,7 +557,27 @@ export default function App() {
             }
             setCapturedPhotoForReview(null);
           }}
-          onSaveToGallery={() => GalleryStorage.savePhotoToGallery(capturedPhotoForReview, activeCase, currentView)}
+          onSaveToGallery={() => {
+            GalleryStorage.savePhotoToGallery(capturedPhotoForReview, activeCase, currentView).then((saveRes) => {
+              if (saveRes.success && saveRes.method === 'gallery') {
+                setGalleryToast({
+                  message: 'Saved to Gallery',
+                  filename: `${saveRes.filename} (Pictures/Orthocamera)`,
+                });
+              } else if (saveRes.success && saveRes.method === 'downloads') {
+                setGalleryToast({
+                  message: 'Saved to Downloads',
+                  filename: saveRes.filename,
+                });
+              } else {
+                setGalleryToast({
+                  message: 'Save Failed',
+                  filename: saveRes.error || saveRes.filename,
+                });
+              }
+              setTimeout(() => setGalleryToast(null), 3500);
+            });
+          }}
         />
       )}
 

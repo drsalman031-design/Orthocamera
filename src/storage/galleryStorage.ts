@@ -1,15 +1,25 @@
+import { Capacitor } from '@capacitor/core';
 import { CapturedPhoto, ClinicalCase, OrthodonticViewDefinition } from '../types';
 import { ORTHODONTIC_VIEWS } from '../photo_workflow/workflowData';
+import { GallerySave } from './galleryPlugin';
 
 export interface SaveGalleryResult {
   success: boolean;
   filename: string;
   fileUrl?: string;
-  method: 'download' | 'share' | 'fallback';
+  uri?: string;
+  method: 'gallery' | 'downloads' | 'fallback';
   error?: string;
 }
 
 export class GalleryStorage {
+  /**
+   * Sanitizes a string for use in file systems across Android and desktop.
+   */
+  public static sanitizeFilenamePart(name: string): string {
+    return name.replace(/[/\\?%*:|"<>]/g, '_').trim().replace(/\s+/g, '_');
+  }
+
   /**
    * Generates a clean, standardized clinical filename for the phone's gallery
    * e.g., Jane_Doe_01_FRONTAL_REST.jpg
@@ -17,13 +27,18 @@ export class GalleryStorage {
   public static getPhotoFilename(
     photo: CapturedPhoto,
     clinicalCase: ClinicalCase,
-    viewDef?: OrthodonticViewDefinition
+    viewDef?: OrthodonticViewDefinition,
+    suffix?: string
   ): string {
     const view = viewDef || ORTHODONTIC_VIEWS.find((v) => v.id === photo.viewId);
     const viewIdx = view ? String(view.index).padStart(2, '0') : '00';
-    const patientName = (clinicalCase.patientName || clinicalCase.patientId || 'Patient').replace(/[^a-zA-Z0-9_-]/g, '_');
-    const viewName = (view?.name || photo.viewId).replace(/[^a-zA-Z0-9_-]/g, '_');
-    return `${patientName}_${viewIdx}_${viewName}.jpg`;
+    const patientRaw = clinicalCase.patientName || clinicalCase.patientId || 'Patient';
+    const patientName = this.sanitizeFilenamePart(patientRaw);
+    const viewRaw = view?.name || photo.viewId;
+    const viewName = this.sanitizeFilenamePart(viewRaw);
+
+    const suffixPart = suffix ? `_${this.sanitizeFilenamePart(suffix)}` : '';
+    return `${patientName}_${viewIdx}_${viewName}${suffixPart}.jpg`;
   }
 
   /**
@@ -33,7 +48,7 @@ export class GalleryStorage {
     const arr = dataUrl.split(',');
     const mimeMatch = arr[0].match(/:(.*?);/);
     const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-    const bstr = atob(arr[1]);
+    const bstr = atob(arr[1] || '');
     let n = bstr.length;
     const u8arr = new Uint8Array(n);
     while (n--) {
@@ -43,20 +58,66 @@ export class GalleryStorage {
   }
 
   /**
-   * Saves captured photo directly to the phone's storage and gallery (Downloads/Pictures)
+   * Checks if running natively inside Capacitor (Android/iOS)
    */
-  public static savePhotoToGallery(
+  public static isNativeAndroid(): boolean {
+    return Capacitor.isNativePlatform();
+  }
+
+  /**
+   * Saves captured photo directly to the phone's gallery (Android MediaStore)
+   * or falls back safely to browser downloads in PWA/Web.
+   */
+  public static async savePhotoToGallery(
     photo: CapturedPhoto,
     clinicalCase: ClinicalCase,
-    viewDef?: OrthodonticViewDefinition
-  ): SaveGalleryResult {
-    const filename = this.getPhotoFilename(photo, clinicalCase, viewDef);
+    viewDef?: OrthodonticViewDefinition,
+    options?: { album?: string; suffix?: string }
+  ): Promise<SaveGalleryResult> {
+    const album = options?.album || 'Orthocamera';
+    const filename = this.getPhotoFilename(photo, clinicalCase, viewDef, options?.suffix);
 
+    // 1. Native Android MediaStore Path (Capacitor)
+    if (this.isNativeAndroid()) {
+      try {
+        const nativeRes = await GallerySave.savePhotoToGallery({
+          filename,
+          jpegBase64: photo.dataUrl,
+          album,
+        });
+
+        if (nativeRes && nativeRes.success) {
+          return {
+            success: true,
+            filename: nativeRes.filename || filename,
+            uri: nativeRes.uri,
+            method: 'gallery',
+          };
+        } else {
+          return {
+            success: false,
+            filename,
+            method: 'gallery',
+            error: 'Native MediaStore write returned unsuccessful',
+          };
+        }
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        console.error('[GalleryStorage] Native Android MediaStore save failed:', err);
+        return {
+          success: false,
+          filename,
+          method: 'gallery',
+          error: errorMsg,
+        };
+      }
+    }
+
+    // 2. Web / PWA Browser Download Fallback
     try {
       const blob = this.dataUrlToBlob(photo.dataUrl);
       const fileUrl = URL.createObjectURL(blob);
 
-      // Direct download trigger into phone's photo storage
       const anchor = document.createElement('a');
       anchor.style.display = 'none';
       anchor.href = fileUrl;
@@ -81,10 +142,10 @@ export class GalleryStorage {
         success: true,
         filename,
         fileUrl,
-        method: 'download',
+        method: 'downloads',
       };
     } catch (err: unknown) {
-      console.warn('Blob save failed, attempting direct dataUrl download:', err);
+      console.warn('[GalleryStorage] Blob save failed, attempting direct dataUrl download:', err);
       try {
         const anchor = document.createElement('a');
         anchor.style.display = 'none';
@@ -95,7 +156,7 @@ export class GalleryStorage {
         setTimeout(() => {
           if (anchor.parentNode) document.body.removeChild(anchor);
         }, 1500);
-        return { success: true, filename, method: 'download' };
+        return { success: true, filename, method: 'downloads' };
       } catch (fallbackErr) {
         return {
           success: false,
@@ -108,17 +169,19 @@ export class GalleryStorage {
   }
 
   /**
-   * Batch save all captured photos directly to device gallery
+   * Batch save all captured photos directly to device gallery or downloads
    */
   public static async saveAllPhotosToGallery(
     clinicalCase: ClinicalCase,
     onProgress?: (saved: number, total: number, currentName: string) => void
-  ): Promise<number> {
+  ): Promise<{ savedCount: number; results: SaveGalleryResult[] }> {
     const photos = Object.values(clinicalCase.photos).filter(
       (p): p is CapturedPhoto => Boolean(p && p.dataUrl)
     );
 
     let savedCount = 0;
+    const results: SaveGalleryResult[] = [];
+
     for (let i = 0; i < photos.length; i++) {
       const photo = photos[i];
       const viewDef = ORTHODONTIC_VIEWS.find((v) => v.id === photo.viewId);
@@ -128,10 +191,15 @@ export class GalleryStorage {
         onProgress(i + 1, photos.length, filename);
       }
 
-      this.savePhotoToGallery(photo, clinicalCase, viewDef);
-      savedCount++;
-      await new Promise((resolve) => setTimeout(resolve, 350));
+      const res = await this.savePhotoToGallery(photo, clinicalCase, viewDef);
+      results.push(res);
+      if (res.success) {
+        savedCount++;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 250));
     }
-    return savedCount;
+
+    return { savedCount, results };
   }
 }

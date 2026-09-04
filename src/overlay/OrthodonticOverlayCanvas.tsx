@@ -294,6 +294,19 @@ const OrthodonticOverlayCanvasComponent: React.FC<OrthodonticOverlayProps> = ({
               strokeWidth="2"
               strokeDasharray="6,4"
             />
+            {/* Live Detected Dynamic Midline (Nose Tip to Chin Tip) */}
+            {guidance.detectedFaceLandmarks?.noseTip && guidance.detectedFaceLandmarks?.chinTip && (
+              <line
+                x1={(guidance.detectedFaceLandmarks.noseTip.x * 1000).toFixed(1)}
+                y1={(guidance.detectedFaceLandmarks.noseTip.y * 1600 - 100).toFixed(1)}
+                x2={(guidance.detectedFaceLandmarks.chinTip.x * 1000).toFixed(1)}
+                y2={(guidance.detectedFaceLandmarks.chinTip.y * 1600 + 40).toFixed(1)}
+                stroke={isReady ? '#10b981' : '#38bdf8'}
+                strokeWidth="2.5"
+                strokeDasharray={isReady ? 'none' : '5,4'}
+                opacity="0.85"
+              />
+            )}
             <LabelPill
               x={500}
               y={370}
@@ -491,6 +504,32 @@ const OrthodonticOverlayCanvasComponent: React.FC<OrthodonticOverlayProps> = ({
               strokeWidth="2"
               strokeDasharray="4,4"
             />
+            {/* Live Detected Dynamic Ricketts E-Line from MediaPipe landmarks */}
+            {guidance.detectedFaceLandmarks?.noseTip && guidance.detectedFaceLandmarks?.chinTip && (
+              <g>
+                <line
+                  x1={(guidance.detectedFaceLandmarks.noseTip.x * 1000).toFixed(1)}
+                  y1={(guidance.detectedFaceLandmarks.noseTip.y * 1600).toFixed(1)}
+                  x2={(guidance.detectedFaceLandmarks.chinTip.x * 1000).toFixed(1)}
+                  y2={(guidance.detectedFaceLandmarks.chinTip.y * 1600).toFixed(1)}
+                  stroke={isReady ? '#10b981' : '#f59e0b'}
+                  strokeWidth="3"
+                  strokeDasharray={isReady ? 'none' : '5,4'}
+                />
+                <circle
+                  cx={(guidance.detectedFaceLandmarks.noseTip.x * 1000).toFixed(1)}
+                  cy={(guidance.detectedFaceLandmarks.noseTip.y * 1600).toFixed(1)}
+                  r="5"
+                  fill={isReady ? '#10b981' : '#f59e0b'}
+                />
+                <circle
+                  cx={(guidance.detectedFaceLandmarks.chinTip.x * 1000).toFixed(1)}
+                  cy={(guidance.detectedFaceLandmarks.chinTip.y * 1600).toFixed(1)}
+                  r="5"
+                  fill={isReady ? '#10b981' : '#f59e0b'}
+                />
+              </g>
+            )}
             <LabelPill
               x={610}
               y={830}
@@ -580,6 +619,32 @@ const OrthodonticOverlayCanvasComponent: React.FC<OrthodonticOverlayProps> = ({
               strokeWidth="2"
               strokeDasharray="4,4"
             />
+            {/* Live Detected Dynamic Ricketts E-Line from MediaPipe landmarks */}
+            {guidance.detectedFaceLandmarks?.noseTip && guidance.detectedFaceLandmarks?.chinTip && (
+              <g>
+                <line
+                  x1={(guidance.detectedFaceLandmarks.noseTip.x * 1000).toFixed(1)}
+                  y1={(guidance.detectedFaceLandmarks.noseTip.y * 1600).toFixed(1)}
+                  x2={(guidance.detectedFaceLandmarks.chinTip.x * 1000).toFixed(1)}
+                  y2={(guidance.detectedFaceLandmarks.chinTip.y * 1600).toFixed(1)}
+                  stroke={isReady ? '#10b981' : '#f59e0b'}
+                  strokeWidth="3"
+                  strokeDasharray={isReady ? 'none' : '5,4'}
+                />
+                <circle
+                  cx={(guidance.detectedFaceLandmarks.noseTip.x * 1000).toFixed(1)}
+                  cy={(guidance.detectedFaceLandmarks.noseTip.y * 1600).toFixed(1)}
+                  r="5"
+                  fill={isReady ? '#10b981' : '#f59e0b'}
+                />
+                <circle
+                  cx={(guidance.detectedFaceLandmarks.chinTip.x * 1000).toFixed(1)}
+                  cy={(guidance.detectedFaceLandmarks.chinTip.y * 1600).toFixed(1)}
+                  r="5"
+                  fill={isReady ? '#10b981' : '#f59e0b'}
+                />
+              </g>
+            )}
             <LabelPill
               x={390}
               y={830}

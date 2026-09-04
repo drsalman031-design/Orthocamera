@@ -10,6 +10,7 @@ import {
 import { FaceAnalysisResult } from './FaceAnalyzer';
 import { IntraoralAnalysisResult } from './IntraoralAnalyzer';
 import { ProfileStateResult } from './ProfileFallbackEngine';
+import { ClinicalAlignmentEngine } from './ClinicalAlignmentEngine';
 
 export interface GuidanceEvaluationInput {
   view: OrthodonticViewDefinition;
@@ -72,10 +73,21 @@ export class OverlayGuidanceEngine {
 
     // --- 1. EXTRAORAL PHOTOGRAPHS GUIDANCE ---
     if (view.category === 'extraoral') {
+      const alignRes = ClinicalAlignmentEngine.evaluate({
+        faceResult,
+        currentView: view,
+        sensitivity,
+        profileState: input.profileState,
+        motionScore,
+        isStable,
+        rawLuminance,
+        rawSharpness,
+      });
+
       if (!faceResult || !faceResult.detected || faceResult.confidence < 0.3) {
         const readiness: CaptureReadiness = {
           ready: false,
-          score: 10,
+          score: 0,
           positionValid: false,
           angleValid: false,
           distanceValid: false,
@@ -92,8 +104,10 @@ export class OverlayGuidanceEngine {
 
         return {
           isReady: false,
-          readyScore: 10,
-          primaryMessage: 'Align patient face in guide',
+          readyScore: 0,
+          alignmentScore: 0,
+          alignmentCorrection: alignRes.correction,
+          primaryMessage: alignRes.correction.message,
           statusType: 'searching',
           positionValid: false,
           positionMessage: 'Face not detected',
@@ -114,7 +128,7 @@ export class OverlayGuidanceEngine {
           motionScore,
           isStable,
           readiness,
-          dominantReason: 'Align patient face in frame',
+          dominantReason: 'FACE_NOT_DETECTED',
         };
       }
 
@@ -141,185 +155,47 @@ export class OverlayGuidanceEngine {
         confidence: 0,
       };
 
-      // 1. High-Quality Detector Check: MediaPipe is the strict source for clinical extraoral capture
-      const isHighQualityDetector = faceResult.aiEngine === 'mediapipe';
-
-      // 2. Face Detection Validity Check
-      const faceDetectionValid = faceResult.detected && faceResult.confidence >= 0.35;
-
-      // 3. Complete Anatomical Landmarks Check
-      const hasRequiredPoints = !!(
-        faceResult.landmarks &&
-        faceResult.landmarks.leftEye &&
-        faceResult.landmarks.rightEye &&
-        faceResult.landmarks.noseTip &&
-        faceResult.landmarks.mouthCenter &&
-        faceResult.landmarks.chinTip
-      );
-
-      // 4. Landmark Quality Check
-      const landmarkQualityValid = spec.requiresFaceLandmarks
-        ? isHighQualityDetector &&
-          landmarkQuality.available &&
-          landmarkQuality.requiredLandmarksPresent &&
-          hasRequiredPoints &&
-          landmarkQuality.confidence >= spec.minLandmarkConfidence
-        : true;
-
-      // 5. Pose Quality Check
-      const isPoseAvailable =
-        pose.source !== 'unavailable' &&
-        pose.yawDeg !== null &&
-        pose.pitchDeg !== null &&
-        pose.rollDeg !== null;
-
-      const poseQualityValid =
-        isHighQualityDetector &&
-        isPoseAvailable &&
-        pose.confidence >= spec.minPoseConfidence;
-
-      // 6. Position / Centering Check
       const positionValid =
-        Math.abs(deltaX) <= spec.centerToleranceX &&
-        Math.abs(deltaY) <= spec.centerToleranceY + 0.05;
-
-      let positionMessage = 'Position ✓';
-      if (!positionValid) {
-        if (Math.abs(deltaX) > spec.centerToleranceX) {
-          positionMessage = deltaX > 0 ? 'Move camera right / Center face' : 'Move camera left / Center face';
-        } else {
-          positionMessage = deltaY > 0 ? 'Move camera up' : 'Move camera down';
-        }
-      }
-
-      // 7. Distance Check
-      const distanceValid = faceRatio >= spec.minFaceHeightRatio && faceRatio <= spec.maxFaceHeightRatio;
-      let distanceMessage = 'Distance ✓';
-      if (!distanceValid) {
-        distanceMessage = faceRatio < spec.minFaceHeightRatio ? 'Move closer' : 'Step back';
-      }
-
-      // 8. Angle / Pose Check against View Target
-      let angleValid = true;
-      let angleMessage = 'Angle ✓';
-
-      const rollError = Math.abs(roll - spec.targetRollDeg);
-      const yawError = Math.abs(yaw - spec.targetYawDeg);
-      const pitchError = Math.abs(pitch - spec.targetPitchDeg);
-
-      if (rollError > spec.rollToleranceDeg) {
-        angleValid = false;
-        angleMessage = roll > spec.targetRollDeg ? 'Level head (tilt left)' : 'Level head (tilt right)';
-      } else if (yawError > spec.yawToleranceDeg) {
-        angleValid = false;
-        angleMessage = yaw > spec.targetYawDeg ? 'Turn head slightly left' : 'Turn head slightly right';
-      } else if (pitchError > spec.pitchToleranceDeg) {
-        angleValid = false;
-        angleMessage = pitch > spec.targetPitchDeg ? 'Lower chin slightly' : 'Raise chin slightly';
-      }
-
-      // Lateral Profile Validation: When input.profileState is provided, enforce its state and capture eligibility
-      if (input.profileState && (view.id === 'RIGHT_PROFILE' || view.id === 'LEFT_PROFILE')) {
-        if (!input.profileState.isCaptureEligible || !input.profileState.isProfileAligned) {
-          angleValid = false;
-          angleMessage = input.profileState.guidanceMessage;
-        }
-      }
-
-      // 9. Expression Check
-      let expressionValid = true;
-      if (spec.requiresSmile) {
-        const minSmile = spec.minSmileScore ?? 0.28;
-        if (faceResult.smileScore < minSmile) {
-          expressionValid = false;
-        }
-      }
-
-      // Aggregate Readiness Reasons (prioritized)
-      const reasons: string[] = [];
-      if (!faceDetectionValid) reasons.push('FACE_NOT_DETECTED');
-      if (!landmarkQualityValid) reasons.push('LANDMARKS_UNRELIABLE');
-      if (!poseQualityValid) reasons.push('POSE_UNRELIABLE');
-      if (input.profileState && (view.id === 'RIGHT_PROFILE' || view.id === 'LEFT_PROFILE') && input.profileState.state === 'TEMPORARILY_LOST') {
-        reasons.push('TRACKING_LOST');
-      }
-      if (!positionValid) reasons.push(deltaX > 0 ? 'MOVE_CAMERA_RIGHT' : 'MOVE_CAMERA_LEFT');
-      if (!distanceValid) reasons.push(faceRatio < spec.minFaceHeightRatio ? 'MOVE_CLOSER' : 'STEP_BACK');
-      if (!angleValid) reasons.push(angleMessage.toUpperCase().replace(/\s+/g, '_'));
-      if (!expressionValid) reasons.push('SMILE_REQUIRED');
-      if (!sharpnessValid) reasons.push('IMAGE_BLURRY');
-      if (!exposureValid) reasons.push('ADJUST_LIGHTING');
-      if (!temporalStabilityValid) reasons.push('HOLD_STILL');
-
-      const allValid =
-        faceDetectionValid &&
-        landmarkQualityValid &&
-        poseQualityValid &&
-        positionValid &&
-        distanceValid &&
-        angleValid &&
-        expressionValid &&
-        sharpnessValid &&
-        exposureValid &&
-        temporalStabilityValid;
-
-      const score = Math.round(
-        (faceDetectionValid ? 15 : 0) +
-        (landmarkQualityValid ? 15 : 0) +
-        (poseQualityValid ? 15 : 0) +
-        (positionValid ? 15 : 0) +
-        (distanceValid ? 10 : 0) +
-        (angleValid ? 15 : 0) +
-        (expressionValid ? 10 : 0) +
-        (temporalStabilityValid ? 5 : 0)
-      );
+        Math.abs(alignRes.centerErrorX) <= spec.centerToleranceX &&
+        Math.abs(alignRes.centerErrorY) <= spec.centerToleranceY + 0.05;
+      const distanceValid = alignRes.distanceError === 0;
+      const angleValid =
+        alignRes.yawErrorDeg <= spec.yawToleranceDeg &&
+        alignRes.pitchErrorDeg <= spec.pitchToleranceDeg &&
+        alignRes.rollErrorDeg <= spec.rollToleranceDeg &&
+        (!(view.id === 'RIGHT_PROFILE' || view.id === 'LEFT_PROFILE') ||
+          (input.profileState?.isCaptureEligible === true && input.profileState?.isProfileAligned === true));
 
       const readiness: CaptureReadiness = {
-        ready: allValid,
-        score,
+        ready: alignRes.ready,
+        score: alignRes.alignmentScore,
         positionValid,
         angleValid,
         distanceValid,
-        expressionValid,
+        expressionValid: alignRes.expressionValid,
         sharpnessValid,
         exposureValid,
-        faceDetectionValid,
-        landmarkQualityValid,
-        poseQualityValid,
+        faceDetectionValid: alignRes.detected && faceResult.confidence >= 0.35,
+        landmarkQualityValid: alignRes.landmarksValid,
+        poseQualityValid: alignRes.poseValid,
         temporalStabilityValid,
-        reasons,
+        reasons: alignRes.reasons,
         confidence: (pose.confidence + landmarkQuality.confidence) / 2,
       };
 
-      // Determine clean primary UI message
-      let primaryMessage = 'Adjust Alignment';
-      if (allValid) {
-        primaryMessage = 'CAPTURE READY — HOLD STILL';
-      } else if (input.profileState && (view.id === 'RIGHT_PROFILE' || view.id === 'LEFT_PROFILE') && !input.profileState.isCaptureEligible) {
-        primaryMessage = input.profileState.guidanceMessage;
-      } else if (!temporalStabilityValid && isStable === false && motionScore > 20) {
-        primaryMessage = 'Hold steady (device motion detected)';
-      } else if (!expressionValid && spec.requiresSmile) {
-        primaryMessage = 'Instruct patient to smile naturally';
-      } else if (!positionValid) {
-        primaryMessage = positionMessage;
-      } else if (!distanceValid) {
-        primaryMessage = distanceMessage;
-      } else if (!angleValid) {
-        primaryMessage = angleMessage;
-      }
-
       return {
-        isReady: allValid,
-        readyScore: score,
-        primaryMessage,
-        statusType: allValid ? 'ready' : 'adjust',
+        isReady: alignRes.ready,
+        readyScore: alignRes.alignmentScore,
+        alignmentScore: alignRes.alignmentScore,
+        alignmentCorrection: alignRes.correction,
+        primaryMessage: alignRes.ready ? 'CAPTURE READY — HOLD STILL' : alignRes.correction.message,
+        statusType: alignRes.ready ? 'ready' : 'adjust',
         positionValid,
-        positionMessage,
+        positionMessage: positionValid ? 'Position ✓' : alignRes.correction.message,
         angleValid,
-        angleMessage,
+        angleMessage: angleValid ? 'Angle ✓' : alignRes.correction.message,
         distanceValid,
-        distanceMessage,
+        distanceMessage: distanceValid ? 'Distance ✓' : alignRes.correction.message,
         sharpnessValid,
         exposureValid,
         headRollDeg: roll,
@@ -341,7 +217,7 @@ export class OverlayGuidanceEngine {
         pose,
         landmarkQuality,
         temporalStability,
-        dominantReason: reasons[0] || 'READY',
+        dominantReason: alignRes.reasons[0] || 'READY',
       };
     }
 
