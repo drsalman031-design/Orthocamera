@@ -12,7 +12,6 @@ import { GalleryStorage } from './storage/galleryStorage';
 import { CameraManager, CameraTelemetry } from './camera/CameraManager';
 import { OrthodonticOverlayCanvas } from './overlay/OrthodonticOverlayCanvas';
 import { WorkflowHeader } from './photo_workflow/WorkflowHeader';
-import { LiveGuidanceHUD } from './photo_workflow/LiveGuidanceHUD';
 import { CameraControls } from './photo_workflow/CameraControls';
 import { QuickReviewOverlay } from './photo_workflow/QuickReviewOverlay';
 import { ProgressDrawer } from './photo_workflow/ProgressDrawer';
@@ -22,7 +21,7 @@ import { AndroidGuideModal } from './components/AndroidGuideModal';
 import { GhostOverlayManager } from './overlay/GhostOverlayManager';
 import { DiagnosticsHUD } from './components/DiagnosticsHUD';
 import { HysteresisController } from './ai_positioning/HysteresisController';
-import { Check, Activity } from 'lucide-react';
+import { Check } from 'lucide-react';
 
 const DEFAULT_SETTINGS: AppSettings = {
   autoCaptureEnabled: true,
@@ -78,7 +77,12 @@ export default function App() {
 
   // Camera Settings
   const [flashMode, setFlashMode] = useState<'off' | 'on' | 'auto' | 'torch'>('off');
-  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>(() => {
+    if (typeof navigator !== 'undefined' && !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      return 'user';
+    }
+    return 'environment';
+  });
   const [zoomLevel, setZoomLevel] = useState<number>(1.0);
 
   // Settings & Preferences
@@ -439,27 +443,10 @@ export default function App() {
           onOpenStepDrawer={() => setIsStepDrawerOpen(true)}
           onOpenPatientModal={() => setIsPatientModalOpen(true)}
           onDeleteCurrentPhoto={() => handleDeletePhoto(currentView.id)}
-          showReferenceLabels={settings.showReferenceLabels}
-          onToggleReferenceLabels={() =>
-            setSettings((prev) => ({
-              ...prev,
-              showReferenceLabels: !prev.showReferenceLabels,
-            }))
-          }
-          showFaceMesh={settings.showFaceMesh}
-          onToggleFaceMesh={() => setSettings(prev => ({ ...prev, showFaceMesh: !prev.showFaceMesh }))}
-          showGrid={settings.showClinicalGrid}
-          onToggleGrid={() =>
-            setSettings((prev) => ({
-              ...prev,
-              showClinicalGrid: !prev.showClinicalGrid,
-            }))
-          }
+          onSelectViewIndex={(index) => setCurrentViewIndex(index)}
         />
 
-        <LiveGuidanceHUD guidance={guidance} currentView={currentView} />
-
-        {/* Real-time Diagnostics HUD (Visible if enabled) */}
+        {/* Real-time Diagnostics HUD (Toggled via Settings) */}
         <DiagnosticsHUD
           isOpen={settings.diagnosticsOverlay}
           onClose={() => setSettings((prev) => ({ ...prev, diagnosticsOverlay: false }))}
@@ -473,24 +460,6 @@ export default function App() {
           zoomLevel={telemetry.zoomLevel}
           isHardwareZoom={telemetry.isHardwareZoom}
         />
-
-        {/* Quick Diagnostics Floating Trigger */}
-        <button
-          onClick={() =>
-            setSettings((prev) => ({
-              ...prev,
-              diagnosticsOverlay: !prev.diagnosticsOverlay,
-            }))
-          }
-          className={`absolute left-4 top-28 z-40 p-2 rounded-full backdrop-blur-xl border transition-all ${
-            settings.diagnosticsOverlay
-              ? 'bg-emerald-500/30 border-emerald-400 text-emerald-200 shadow-lg shadow-emerald-950/40'
-              : 'bg-black/40 border-white/20 text-white/60 hover:text-white'
-          }`}
-          title="Toggle Clinical Diagnostics HUD"
-        >
-          <Activity className="w-4 h-4" />
-        </button>
 
         {/* ======================================================================= */}
         {/* 5. CONTROLS LAYER: BOTTOM SHUTTER & CONTROLS                            */}

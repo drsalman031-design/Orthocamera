@@ -96,6 +96,10 @@ export class ProfileFallbackEngine {
     };
   }
 
+  public getLastStableResult(): FaceAnalysisResult | null {
+    return this.lastStableResult;
+  }
+
   public reset(): void {
     this.lastStableResult = null;
     this.lastStableTimestamp = 0;

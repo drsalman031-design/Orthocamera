@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { CameraOff, RefreshCw } from 'lucide-react';
 import { CapturedPhoto, LiveGuidanceState, OrthodonticViewDefinition, QualityCheckResult } from '../types';
 import { FaceAnalysisResult, OnDeviceFaceAnalyzer } from '../ai_positioning/FaceAnalyzer';
 import { IntraoralAnalysisResult, OnDeviceIntraoralAnalyzer } from '../ai_positioning/IntraoralAnalyzer';
@@ -36,6 +37,73 @@ interface CameraManagerProps {
   children?: React.ReactNode;
 }
 
+/**
+ * Normalizes FaceAnalysisResult coordinates and angles when the camera feed is mirrored (front/user camera).
+ * Ensures that turning head right on screen yields positive yaw, matching on-screen templates and landmarks.
+ */
+function mirrorFaceResult(result: FaceAnalysisResult): FaceAnalysisResult {
+  return {
+    ...result,
+    yawDeg: -result.yawDeg,
+    rollDeg: -result.rollDeg,
+    eyeLineAngleDeg: -result.eyeLineAngleDeg,
+    center: {
+      x: 1.0 - result.center.x,
+      y: result.center.y,
+    },
+    boundingBox: {
+      ...result.boundingBox,
+      x: Math.max(0, 1.0 - (result.boundingBox.x + result.boundingBox.width)),
+    },
+    meshContours: result.meshContours
+      ? {
+          faceOval: result.meshContours.faceOval.map((p) => ({ x: 1.0 - p.x, y: p.y })),
+          lips: result.meshContours.lips.map((p) => ({ x: 1.0 - p.x, y: p.y })),
+          leftEye: result.meshContours.rightEye.map((p) => ({ x: 1.0 - p.x, y: p.y })),
+          rightEye: result.meshContours.leftEye.map((p) => ({ x: 1.0 - p.x, y: p.y })),
+          noseBridge: result.meshContours.noseBridge.map((p) => ({ x: 1.0 - p.x, y: p.y })),
+          leftPupil: result.meshContours.rightPupil
+            ? { x: 1.0 - result.meshContours.rightPupil.x, y: result.meshContours.rightPupil.y }
+            : undefined,
+          rightPupil: result.meshContours.leftPupil
+            ? { x: 1.0 - result.meshContours.leftPupil.x, y: result.meshContours.leftPupil.y }
+            : undefined,
+        }
+      : undefined,
+    landmarks: result.landmarks
+      ? {
+          leftEye: result.landmarks.rightEye
+            ? { x: 1.0 - result.landmarks.rightEye.x, y: result.landmarks.rightEye.y }
+            : { x: 1.0 - result.landmarks.leftEye.x, y: result.landmarks.leftEye.y },
+          rightEye: result.landmarks.leftEye
+            ? { x: 1.0 - result.landmarks.leftEye.x, y: result.landmarks.leftEye.y }
+            : { x: 1.0 - result.landmarks.rightEye.x, y: result.landmarks.rightEye.y },
+          noseTip: { x: 1.0 - result.landmarks.noseTip.x, y: result.landmarks.noseTip.y },
+          mouthCenter: { x: 1.0 - result.landmarks.mouthCenter.x, y: result.landmarks.mouthCenter.y },
+          chinTip: { x: 1.0 - result.landmarks.chinTip.x, y: result.landmarks.chinTip.y },
+          leftCheek: result.landmarks.rightCheek
+            ? { x: 1.0 - result.landmarks.rightCheek.x, y: result.landmarks.rightCheek.y }
+            : undefined,
+          rightCheek: result.landmarks.leftCheek
+            ? { x: 1.0 - result.landmarks.leftCheek.x, y: result.landmarks.leftCheek.y }
+            : undefined,
+          leftMouthCorner: result.landmarks.rightMouthCorner
+            ? { x: 1.0 - result.landmarks.rightMouthCorner.x, y: result.landmarks.rightMouthCorner.y }
+            : undefined,
+          rightMouthCorner: result.landmarks.leftMouthCorner
+            ? { x: 1.0 - result.landmarks.leftMouthCorner.x, y: result.landmarks.leftMouthCorner.y }
+            : undefined,
+          upperLip: result.landmarks.upperLip
+            ? { x: 1.0 - result.landmarks.upperLip.x, y: result.landmarks.upperLip.y }
+            : undefined,
+          lowerLip: result.landmarks.lowerLip
+            ? { x: 1.0 - result.landmarks.lowerLip.x, y: result.landmarks.lowerLip.y }
+            : undefined,
+        }
+      : undefined,
+  };
+}
+
 const CameraManagerComponent: React.FC<CameraManagerProps> = ({
   currentView,
   guidanceSensitivity,
@@ -62,6 +130,7 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
 
   const [cameraActive, setCameraActive] = useState<boolean>(false);
   const [isInitializing, setIsInitializing] = useState<boolean>(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(null);
   const [torchSupported, setTorchSupported] = useState<boolean>(false);
   const [isHardwareZoom, setIsHardwareZoom] = useState<boolean>(false);
@@ -111,6 +180,7 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
     async (targetFacing: 'environment' | 'user' = facingMode) => {
       const requestId = ++activeRequestIdRef.current;
       setIsInitializing(true);
+      setCameraError(null);
       stopCurrentStream();
 
       // Verify browser MediaDevices support
@@ -120,6 +190,14 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
         typeof navigator.mediaDevices.getUserMedia !== 'function'
       ) {
         setIsInitializing(false);
+        setCameraActive(false);
+        if (typeof window !== 'undefined' && !window.isSecureContext) {
+          setCameraError(
+            'Camera access requires a secure connection. Please open http://localhost:3000 instead of your network IP address.'
+          );
+        } else {
+          setCameraError('Camera API is not supported in this browser.');
+        }
         return;
       }
 
@@ -261,6 +339,7 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
               console.warn('Video play deferred until gesture:', playErr);
             });
             setCameraActive(true);
+            setCameraError(null);
             setIsInitializing(false);
           };
 
@@ -269,18 +348,39 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
 
           video.play().then(() => {
             setCameraActive(true);
+            setCameraError(null);
             setIsInitializing(false);
           }).catch(() => {
             setCameraActive(true);
+            setCameraError(null);
             setIsInitializing(false);
           });
         } else {
           setCameraActive(true);
+          setCameraError(null);
           setIsInitializing(false);
         }
       } else {
         setCameraActive(false);
         setIsInitializing(false);
+        let msg = 'Unable to start camera.';
+        if (typeof window !== 'undefined' && !window.isSecureContext) {
+          msg = 'Camera access requires a secure connection. Please open http://localhost:3000 instead of your network IP address.';
+        } else if (lastErr && typeof lastErr === 'object') {
+          const err = lastErr as { name?: string; message?: string };
+          if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+            msg = 'Camera permission was blocked. Please click the camera or lock icon in your browser address bar to allow camera access, then click Try Again.';
+          } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+            msg = 'Camera is currently in use by another application (e.g. Zoom, Teams, Skype, or Windows Camera app). Please close it and click Try Again.';
+          } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+            msg = 'No camera found on your laptop. If your laptop has a webcam privacy slider switch or dedicated privacy button, ensure it is turned on.';
+          } else if (err.name === 'OverconstrainedError') {
+            msg = 'Camera resolution constraints not supported by your webcam hardware.';
+          } else if (err.message) {
+            msg = err.message;
+          }
+        }
+        setCameraError(msg);
       }
     },
     [facingMode, onFacingModeChange, stopCurrentStream]
@@ -465,6 +565,13 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
   const sensorResolutionRef = useRef(sensorResolution);
   sensorResolutionRef.current = sensorResolution;
 
+  const facingModeRef = useRef(facingMode);
+  facingModeRef.current = facingMode;
+
+  useEffect(() => {
+    profileFallbackRef.current.reset();
+  }, [currentView.id]);
+
   const lastGuidanceDispatchTimeRef = useRef<number>(0);
   const lastTelemetryDispatchTimeRef = useRef<number>(0);
 
@@ -525,16 +632,33 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
             if (activeView.category === 'extraoral') {
               faceRes = faceAnalyzerRef.current.analyzeFrame(sampleCanvas, ctx, 240, 180, video);
 
+              // If user/front camera is active (mirrored display), mirror face analysis results
+              // so that yaw, roll, centering, and mesh contours perfectly match the user's on-screen mirror view
+              if (faceRes && facingModeRef.current === 'user') {
+                faceRes = mirrorFaceResult(faceRes);
+              }
+
               // Lateral Profile Fallback Engine
               if (activeView.id === 'RIGHT_PROFILE' || activeView.id === 'LEFT_PROFILE') {
                 const isRight = activeView.id === 'RIGHT_PROFILE';
                 const profileResult = profileFallbackRef.current.evaluateProfile(isRight, faceRes);
 
-                if (profileResult.state === 'TEMPORARILY_LOST' && faceRes) {
-                  faceRes.detected = true;
-                  faceRes.confidence = profileResult.confidence;
-                  faceRes.yawDeg = profileResult.estimatedYaw;
-                  faceRes.rollDeg = profileResult.estimatedRoll;
+                if (profileResult.state === 'TEMPORARILY_LOST') {
+                  const lastStable = profileFallbackRef.current.getLastStableResult();
+                  if (lastStable) {
+                    faceRes = {
+                      ...lastStable,
+                      detected: true,
+                      confidence: profileResult.confidence,
+                      yawDeg: profileResult.estimatedYaw,
+                      rollDeg: profileResult.estimatedRoll,
+                    };
+                  } else if (faceRes) {
+                    faceRes.detected = true;
+                    faceRes.confidence = profileResult.confidence;
+                    faceRes.yawDeg = profileResult.estimatedYaw;
+                    faceRes.rollDeg = profileResult.estimatedRoll;
+                  }
                 }
               }
             } else {
@@ -698,6 +822,45 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
           <div className="w-16 h-16 border-2 border-emerald-400 rounded-sm animate-ping opacity-75" />
           <div className="absolute inset-0 w-16 h-16 border-2 border-emerald-400 rounded-sm flex items-center justify-center">
             <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full" />
+          </div>
+        </div>
+      )}
+
+      {/* Camera Troubleshooting & Permission Alert Card */}
+      {cameraError && !cameraActive && (
+        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center p-6 bg-slate-950/95 backdrop-blur-md text-center animate-fade-in">
+          <div className="w-16 h-16 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 mb-4 shadow-lg shadow-rose-500/10">
+            <CameraOff className="w-8 h-8" />
+          </div>
+          <h3 className="text-lg font-bold text-white mb-2">Camera Unavailable</h3>
+          <p className="text-xs text-slate-300 max-w-xs leading-relaxed mb-6">
+            {cameraError}
+          </p>
+          <div className="flex flex-col gap-2.5 w-full max-w-xs">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setCameraError(null);
+                initHardwareCamera(facingMode);
+              }}
+              className="w-full py-3 px-4 bg-emerald-500 hover:bg-emerald-600 active:scale-98 text-white text-xs font-semibold rounded-xl shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 transition-all cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Try Again / Request Permission
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                const nextFacing = facingMode === 'environment' ? 'user' : 'environment';
+                if (onFacingModeChange) onFacingModeChange(nextFacing);
+                initHardwareCamera(nextFacing);
+              }}
+              className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 active:scale-98 text-slate-200 text-xs font-medium rounded-xl border border-slate-700 transition-all cursor-pointer"
+            >
+              Switch to {facingMode === 'environment' ? 'Front (User) Camera' : 'Rear Camera'}
+            </button>
           </div>
         </div>
       )}
