@@ -252,4 +252,5 @@ export interface AppSettings {
   diagnosticsOverlay: boolean; // Show real-time camera FPS, AI latency & motion diagnostics
   ghostOverlayEnabled: boolean; // Longitudinal ghost alignment
   ghostOverlayOpacity: number; // 0.1 to 0.4
+  allowManualCaptureOverride?: boolean; // Override alignment gate on manual shutter press (default false)
 }

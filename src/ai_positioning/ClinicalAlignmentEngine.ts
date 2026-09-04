@@ -324,35 +324,35 @@ export class ClinicalAlignmentEngine {
       };
     } else if (!positionValid) {
       if (Math.abs(centerErrorX) > spec.centerToleranceX) {
-        if (centerErrorX > 0) {
-          reasons.push('MOVE_CAMERA_RIGHT');
+        if (centerErrorX < 0) {
+          reasons.push('ALIGN_FACE_RIGHT');
           correction = {
             direction: 'RIGHT',
             magnitude: Math.abs(centerErrorX),
-            message: 'Move camera right',
+            message: 'MOVE RIGHT',
           };
         } else {
-          reasons.push('MOVE_CAMERA_LEFT');
+          reasons.push('ALIGN_FACE_LEFT');
           correction = {
             direction: 'LEFT',
             magnitude: Math.abs(centerErrorX),
-            message: 'Move camera left',
+            message: 'MOVE LEFT',
           };
         }
       } else {
-        if (centerErrorY > 0) {
-          reasons.push('MOVE_CAMERA_DOWN');
+        if (centerErrorY < 0) {
+          reasons.push('ALIGN_FACE_DOWN');
           correction = {
             direction: 'DOWN',
             magnitude: Math.abs(centerErrorY),
-            message: 'Move camera down',
+            message: 'MOVE DOWN',
           };
         } else {
-          reasons.push('MOVE_CAMERA_UP');
+          reasons.push('ALIGN_FACE_UP');
           correction = {
             direction: 'UP',
             magnitude: Math.abs(centerErrorY),
-            message: 'Move camera up',
+            message: 'MOVE UP',
           };
         }
       }
@@ -362,30 +362,30 @@ export class ClinicalAlignmentEngine {
         correction = {
           direction: 'MOVE_CLOSER',
           magnitude: spec.minFaceHeightRatio - faceRatio,
-          message: 'Move closer',
+          message: 'MOVE CLOSER',
         };
       } else {
-        reasons.push('STEP_BACK');
+        reasons.push('MOVE_BACK');
         correction = {
           direction: 'MOVE_BACK',
           magnitude: faceRatio - spec.maxFaceHeightRatio,
-          message: 'Step back',
+          message: 'MOVE BACK',
         };
       }
     } else if (rollErrorDeg > spec.rollToleranceDeg) {
       if (roll > spec.targetRollDeg) {
-        reasons.push('LEVEL_HEAD_LEFT');
+        reasons.push('ROTATE_LEFT');
         correction = {
           direction: 'ROTATE_LEFT',
           magnitude: rollErrorDeg,
-          message: 'Level head (tilt left)',
+          message: 'ROTATE LEFT',
         };
       } else {
-        reasons.push('LEVEL_HEAD_RIGHT');
+        reasons.push('ROTATE_RIGHT');
         correction = {
           direction: 'ROTATE_RIGHT',
           magnitude: rollErrorDeg,
-          message: 'Level head (tilt right)',
+          message: 'ROTATE RIGHT',
         };
       }
     } else if (yawErrorDeg > spec.yawToleranceDeg || (isProfileView && !angleValid)) {
@@ -396,14 +396,14 @@ export class ClinicalAlignmentEngine {
             correction = {
               direction: 'RIGHT',
               magnitude: 90 - yaw,
-              message: 'Turn patient further right (target ~90° profile)',
+              message: 'TURN RIGHT (90° Profile)',
             };
           } else {
             reasons.push('TURN_PATIENT_LEFT');
             correction = {
               direction: 'LEFT',
               magnitude: yaw - 90,
-              message: 'Turn patient slightly left (target ~90° profile)',
+              message: 'TURN LEFT (90° Profile)',
             };
           }
         } else {
@@ -413,14 +413,14 @@ export class ClinicalAlignmentEngine {
             correction = {
               direction: 'LEFT',
               magnitude: yaw + 90,
-              message: 'Turn patient further left (target ~90° profile)',
+              message: 'TURN LEFT (90° Profile)',
             };
           } else {
             reasons.push('TURN_PATIENT_RIGHT');
             correction = {
               direction: 'RIGHT',
               magnitude: -90 - yaw,
-              message: 'Turn patient slightly right (target ~90° profile)',
+              message: 'TURN RIGHT (90° Profile)',
             };
           }
         }
@@ -430,14 +430,14 @@ export class ClinicalAlignmentEngine {
           correction = {
             direction: 'LEFT',
             magnitude: yawErrorDeg,
-            message: 'Turn head slightly left',
+            message: 'ROTATE LEFT',
           };
         } else {
           reasons.push('TURN_HEAD_RIGHT');
           correction = {
             direction: 'RIGHT',
             magnitude: yawErrorDeg,
-            message: 'Turn head slightly right',
+            message: 'ROTATE RIGHT',
           };
         }
       }
@@ -447,14 +447,14 @@ export class ClinicalAlignmentEngine {
         correction = {
           direction: 'DOWN',
           magnitude: pitchErrorDeg,
-          message: 'Lower chin slightly',
+          message: 'LOWER CHIN',
         };
       } else {
         reasons.push('RAISE_CHIN');
         correction = {
           direction: 'UP',
           magnitude: pitchErrorDeg,
-          message: 'Raise chin slightly',
+          message: 'RAISE CHIN',
         };
       }
     } else if (!expressionValid && spec.requiresSmile) {

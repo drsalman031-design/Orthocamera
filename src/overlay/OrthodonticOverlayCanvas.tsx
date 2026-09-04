@@ -127,126 +127,75 @@ const OrthodonticOverlayCanvasComponent: React.FC<OrthodonticOverlayProps> = ({
   const yawDiff = Math.abs(currentYaw - targetYaw);
   const isYawAligned = yawDiff <= 5.0;
 
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null);
+  const [viewportSize, setViewportSize] = React.useState<{ width: number; height: number }>({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1000,
+    height: typeof window !== 'undefined' ? window.innerHeight : 1600,
+  });
+
+  React.useEffect(() => {
+    const measure = () => {
+      if (wrapperRef.current) {
+        const rect = wrapperRef.current.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          setViewportSize({ width: Math.round(rect.width), height: Math.round(rect.height) });
+        }
+      } else if (typeof window !== 'undefined') {
+        setViewportSize({ width: window.innerWidth, height: window.innerHeight });
+      }
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+
+  const W = viewportSize.width;
+  const H = viewportSize.height;
+
+  const isIntraoral = view.category === 'intraoral';
+  const targetCenterX = 0.5 * W;
+  const targetCenterY = (isIntraoral ? 0.50 : 0.45) * H;
+
+  // Scale and translate the 1000x1600 clinical template to fit the screen viewport with comfortable clinical margins
+  const maxTmplH = H * (isIntraoral ? 0.70 : 0.62);
+  const maxTmplW = W * 0.86;
+  const scaleH = maxTmplH / 1100;
+  const scaleW = maxTmplW / 750;
+  const tmplScale = Math.min(scaleH, scaleW);
+  const tmplOriginY = isIntraoral ? 800 : 740;
+  const tmplTx = targetCenterX - 500 * tmplScale;
+  const tmplTy = targetCenterY - tmplOriginY * tmplScale;
+
   return (
     <div
-      className="absolute inset-0 pointer-events-none z-10 select-none overflow-hidden"
-      style={{ opacity }}
+      ref={wrapperRef}
+      className="absolute inset-0 pointer-events-none select-none overflow-hidden"
     >
-      <svg
-        className="w-full h-full"
-        viewBox="0 0 1000 1600"
-        preserveAspectRatio="xMidYMid slice"
-        style={{ filter: glowFilter }}
+      {/* ================================================================= */}
+      {/* 1. Z-20: ORTHODONTIC CLINICAL OVERLAY GUIDELINES (Transparent)    */}
+      {/* ================================================================= */}
+      <div
+        className="absolute inset-0 pointer-events-none z-20 select-none overflow-hidden"
+        style={{ opacity }}
       >
-        <defs>
-          <linearGradient id="gridGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor={baseColor} stopOpacity="0.04" />
-            <stop offset="100%" stopColor={baseColor} stopOpacity="0.02" />
-          </linearGradient>
-          <radialGradient id="smileGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor={baseColor} stopOpacity="0.15" />
-            <stop offset="100%" stopColor={baseColor} stopOpacity="0.0" />
-          </radialGradient>
-        </defs>
+        <svg
+          className="w-full h-full"
+          viewBox={`0 0 ${W} ${H}`}
+          style={{ filter: glowFilter }}
+        >
+          <defs>
+            <linearGradient id="gridGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={baseColor} stopOpacity="0.04" />
+              <stop offset="100%" stopColor={baseColor} stopOpacity="0.02" />
+            </linearGradient>
+            <radialGradient id="smileGlow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor={baseColor} stopOpacity="0.15" />
+              <stop offset="100%" stopColor={baseColor} stopOpacity="0.0" />
+            </radialGradient>
+          </defs>
 
-        
-        {/* ================================================================= */}
-        {/* LIVE 3D FACIAL MESH & AI TRACKING RETICLE (Google MediaPipe)      */}
-        {/* ================================================================= */}
-        {showMesh && guidance.meshContours && (
-          <g className="transition-all duration-100 ease-out pointer-events-none">
-            {/* 1. Live 3D Face Oval Contour */}
-            {guidance.meshContours.faceOval && guidance.meshContours.faceOval.length > 0 && (
-              <path
-                d={
-                  guidance.meshContours.faceOval
-                    .map((p, i) => `${i === 0 ? 'M' : 'L'} ${(p.x * 1000).toFixed(1)} ${(p.y * 1600).toFixed(1)}`)
-                    .join(' ') + ' Z'
-                }
-                fill={isReady ? 'rgba(16, 185, 129, 0.08)' : 'rgba(6, 182, 212, 0.06)'}
-                stroke={isReady ? '#34d399' : '#22d3ee'}
-                strokeWidth={isReady ? '2.5' : '1.8'}
-                strokeDasharray={isReady ? 'none' : '6,4'}
-                filter="drop-shadow(0 0 8px rgba(6, 182, 212, 0.5))"
-              />
-            )}
-
-            {/* 2. Live Pupils & Iris Tracking Reticles */}
-            {guidance.meshContours.leftPupil && (
-              <g transform={`translate(${(guidance.meshContours.leftPupil.x * 1000).toFixed(1)}, ${(guidance.meshContours.leftPupil.y * 1600).toFixed(1)})`}>
-                <circle r="18" fill="none" stroke="#22d3ee" strokeWidth="1.5" strokeDasharray="3,3" className="animate-spin-slow" />
-                <circle r="6" fill="#34d399" fillOpacity="0.8" />
-                <line x1="-24" y1="0" x2="24" y2="0" stroke="#22d3ee" strokeWidth="1" strokeOpacity="0.7" />
-                <line x1="0" y1="-24" x2="0" y2="24" stroke="#22d3ee" strokeWidth="1" strokeOpacity="0.7" />
-              </g>
-            )}
-
-            {guidance.meshContours.rightPupil && (
-              <g transform={`translate(${(guidance.meshContours.rightPupil.x * 1000).toFixed(1)}, ${(guidance.meshContours.rightPupil.y * 1600).toFixed(1)})`}>
-                <circle r="18" fill="none" stroke="#22d3ee" strokeWidth="1.5" strokeDasharray="3,3" className="animate-spin-slow" />
-                <circle r="6" fill="#34d399" fillOpacity="0.8" />
-                <line x1="-24" y1="0" x2="24" y2="0" stroke="#22d3ee" strokeWidth="1" strokeOpacity="0.7" />
-                <line x1="0" y1="-24" x2="0" y2="24" stroke="#22d3ee" strokeWidth="1" strokeOpacity="0.7" />
-              </g>
-            )}
-
-            {/* 3. Live Interpupillary Axis Line (Horizontal Bipupillary Plane) */}
-            {guidance.meshContours.leftPupil && guidance.meshContours.rightPupil && (
-              <g>
-                <line
-                  x1={(guidance.meshContours.leftPupil.x * 1000).toFixed(1)}
-                  y1={(guidance.meshContours.leftPupil.y * 1600).toFixed(1)}
-                  x2={(guidance.meshContours.rightPupil.x * 1000).toFixed(1)}
-                  y2={(guidance.meshContours.rightPupil.y * 1600).toFixed(1)}
-                  stroke={Math.abs(guidance.headRollDeg) <= 3 ? '#34d399' : '#f59e0b'}
-                  strokeWidth="2"
-                  strokeDasharray="4,4"
-                />
-                {/* Live Roll degrees text floating above eye center */}
-                <text
-                  x={(((guidance.meshContours.leftPupil.x + guidance.meshContours.rightPupil.x) / 2) * 1000).toFixed(1)}
-                  y={(((guidance.meshContours.leftPupil.y + guidance.meshContours.rightPupil.y) / 2) * 1600 - 25).toFixed(1)}
-                  textAnchor="middle"
-                  fill={Math.abs(guidance.headRollDeg) <= 3 ? '#34d399' : '#fbbf24'}
-                  fontSize="22"
-                  fontFamily="JetBrains Mono, monospace"
-                  fontWeight="bold"
-                  filter="drop-shadow(0 0 4px #000)"
-                >
-                  ROLL: {guidance.headRollDeg > 0 ? `+${Math.round(guidance.headRollDeg)}°` : `${Math.round(guidance.headRollDeg)}°`}
-                </text>
-              </g>
-            )}
-
-            {/* 4. Live Lips & Smile Contour */}
-            {guidance.meshContours.lips && guidance.meshContours.lips.length > 0 && (
-              <path
-                d={
-                  guidance.meshContours.lips
-                    .map((p, i) => `${i === 0 ? 'M' : 'L'} ${(p.x * 1000).toFixed(1)} ${(p.y * 1600).toFixed(1)}`)
-                    .join(' ') + ' Z'
-                }
-                fill="none"
-                stroke={isReady ? '#34d399' : '#38bdf8'}
-                strokeWidth="2"
-              />
-            )}
-
-            {/* 5. Live Nose Bridge Line */}
-            {guidance.meshContours.noseBridge && guidance.meshContours.noseBridge.length > 0 && (
-              <path
-                d={
-                  guidance.meshContours.noseBridge
-                    .map((p, i) => `${i === 0 ? 'M' : 'L'} ${(p.x * 1000).toFixed(1)} ${(p.y * 1600).toFixed(1)}`)
-                    .join(' ')
-                }
-                fill="none"
-                stroke="#22d3ee"
-                strokeWidth="1.8"
-              />
-            )}
-          </g>
-        )}
+          {/* Unified Clinical Template Space [0..1000] x [0..1600] scaled and centered to viewport */}
+          <g transform={`translate(${tmplTx.toFixed(2)}, ${tmplTy.toFixed(2)}) scale(${tmplScale.toFixed(4)})`}>
 
         {/* Optional Clinical Measurement Grid (Rule of Thirds & Symmetry) */}
         {showGrid && (
@@ -294,19 +243,6 @@ const OrthodonticOverlayCanvasComponent: React.FC<OrthodonticOverlayProps> = ({
               strokeWidth="2"
               strokeDasharray="6,4"
             />
-            {/* Live Detected Dynamic Midline (Nose Tip to Chin Tip) */}
-            {guidance.detectedFaceLandmarks?.noseTip && guidance.detectedFaceLandmarks?.chinTip && (
-              <line
-                x1={(guidance.detectedFaceLandmarks.noseTip.x * 1000).toFixed(1)}
-                y1={(guidance.detectedFaceLandmarks.noseTip.y * 1600 - 100).toFixed(1)}
-                x2={(guidance.detectedFaceLandmarks.chinTip.x * 1000).toFixed(1)}
-                y2={(guidance.detectedFaceLandmarks.chinTip.y * 1600 + 40).toFixed(1)}
-                stroke={isReady ? '#10b981' : '#38bdf8'}
-                strokeWidth="2.5"
-                strokeDasharray={isReady ? 'none' : '5,4'}
-                opacity="0.85"
-              />
-            )}
             <LabelPill
               x={500}
               y={370}
@@ -504,32 +440,7 @@ const OrthodonticOverlayCanvasComponent: React.FC<OrthodonticOverlayProps> = ({
               strokeWidth="2"
               strokeDasharray="4,4"
             />
-            {/* Live Detected Dynamic Ricketts E-Line from MediaPipe landmarks */}
-            {guidance.detectedFaceLandmarks?.noseTip && guidance.detectedFaceLandmarks?.chinTip && (
-              <g>
-                <line
-                  x1={(guidance.detectedFaceLandmarks.noseTip.x * 1000).toFixed(1)}
-                  y1={(guidance.detectedFaceLandmarks.noseTip.y * 1600).toFixed(1)}
-                  x2={(guidance.detectedFaceLandmarks.chinTip.x * 1000).toFixed(1)}
-                  y2={(guidance.detectedFaceLandmarks.chinTip.y * 1600).toFixed(1)}
-                  stroke={isReady ? '#10b981' : '#f59e0b'}
-                  strokeWidth="3"
-                  strokeDasharray={isReady ? 'none' : '5,4'}
-                />
-                <circle
-                  cx={(guidance.detectedFaceLandmarks.noseTip.x * 1000).toFixed(1)}
-                  cy={(guidance.detectedFaceLandmarks.noseTip.y * 1600).toFixed(1)}
-                  r="5"
-                  fill={isReady ? '#10b981' : '#f59e0b'}
-                />
-                <circle
-                  cx={(guidance.detectedFaceLandmarks.chinTip.x * 1000).toFixed(1)}
-                  cy={(guidance.detectedFaceLandmarks.chinTip.y * 1600).toFixed(1)}
-                  r="5"
-                  fill={isReady ? '#10b981' : '#f59e0b'}
-                />
-              </g>
-            )}
+            {/* Ricketts E-Line */}
             <LabelPill
               x={610}
               y={830}
@@ -619,32 +530,7 @@ const OrthodonticOverlayCanvasComponent: React.FC<OrthodonticOverlayProps> = ({
               strokeWidth="2"
               strokeDasharray="4,4"
             />
-            {/* Live Detected Dynamic Ricketts E-Line from MediaPipe landmarks */}
-            {guidance.detectedFaceLandmarks?.noseTip && guidance.detectedFaceLandmarks?.chinTip && (
-              <g>
-                <line
-                  x1={(guidance.detectedFaceLandmarks.noseTip.x * 1000).toFixed(1)}
-                  y1={(guidance.detectedFaceLandmarks.noseTip.y * 1600).toFixed(1)}
-                  x2={(guidance.detectedFaceLandmarks.chinTip.x * 1000).toFixed(1)}
-                  y2={(guidance.detectedFaceLandmarks.chinTip.y * 1600).toFixed(1)}
-                  stroke={isReady ? '#10b981' : '#f59e0b'}
-                  strokeWidth="3"
-                  strokeDasharray={isReady ? 'none' : '5,4'}
-                />
-                <circle
-                  cx={(guidance.detectedFaceLandmarks.noseTip.x * 1000).toFixed(1)}
-                  cy={(guidance.detectedFaceLandmarks.noseTip.y * 1600).toFixed(1)}
-                  r="5"
-                  fill={isReady ? '#10b981' : '#f59e0b'}
-                />
-                <circle
-                  cx={(guidance.detectedFaceLandmarks.chinTip.x * 1000).toFixed(1)}
-                  cy={(guidance.detectedFaceLandmarks.chinTip.y * 1600).toFixed(1)}
-                  r="5"
-                  fill={isReady ? '#10b981' : '#f59e0b'}
-                />
-              </g>
-            )}
+            {/* Ricketts E-Line */}
             <LabelPill
               x={390}
               y={830}
@@ -1255,47 +1141,188 @@ const OrthodonticOverlayCanvasComponent: React.FC<OrthodonticOverlayProps> = ({
           </g>
         )}
 
-        {/* ========================================================================= */}
-        {/* COMPACT HEAD TILT SPIRIT LEVEL BUBBLE (Non-intrusive bottom-center gauge)  */}
-        {/* ========================================================================= */}
-        <g transform="translate(500, 1370)">
-          {/* Level Tube */}
-          <rect
-            x="-55"
-            y="-9"
-            width="110"
-            height="18"
-            rx="9"
-            fill="#080c14"
-            fillOpacity={0.88}
-            stroke={Math.abs(rollAngle) <= 3.5 ? '#10b981' : '#f59e0b'}
-            strokeWidth={1.2}
-          />
-          {/* Center Target Lines */}
-          <line x1="-10" y1="-9" x2="-10" y2="9" stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
-          <line x1="10" y1="-9" x2="10" y2="9" stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
-          {/* Moving Bubble */}
-          <circle
-            cx={bubbleOffset}
-            cy="0"
-            r="6.5"
-            fill={Math.abs(rollAngle) <= 3.5 ? '#10b981' : '#f59e0b'}
-            style={{ transition: 'cx 100ms ease-out' }}
-          />
-          <text
-            x="0"
-            y="24"
-            fill="#cbd5e1"
-            fontSize="10"
-            fontWeight="600"
-            textAnchor="middle"
-            fontFamily="JetBrains Mono, monospace"
-            letterSpacing="0.8px"
-          >
-            {Math.abs(rollAngle) <= 3.5 ? 'LEVEL 0°' : `TILT ${rollAngle > 0 ? '+' : ''}${rollAngle.toFixed(1)}°`}
-          </text>
-        </g>
-      </svg>
+          </g>
+        </svg>
+      </div>
+
+      {/* ================================================================= */}
+      {/* 2. Z-30: MEDIAPIPE LIVE TRACKING & FACIAL MESH                    */}
+      {/* ================================================================= */}
+      {showMesh && (
+        <div className="absolute inset-0 pointer-events-none z-30 select-none overflow-hidden">
+          <svg className="w-full h-full" viewBox={`0 0 ${W} ${H}`}>
+            {/* Facial Mesh Contours */}
+            {guidance.meshContours?.faceOval && guidance.meshContours.faceOval.length > 0 && (
+              <path
+                d={`M ${guidance.meshContours.faceOval.map(p => `${(p.x * W).toFixed(1)},${(p.y * H).toFixed(1)}`).join(' L ')} Z`}
+                fill="none"
+                stroke={isReady ? 'rgba(16, 185, 129, 0.45)' : 'rgba(56, 189, 248, 0.35)'}
+                strokeWidth="1.5"
+                strokeDasharray="4,4"
+              />
+            )}
+
+            {guidance.meshContours?.lips && guidance.meshContours.lips.length > 0 && (
+              <path
+                d={`M ${guidance.meshContours.lips.map(p => `${(p.x * W).toFixed(1)},${(p.y * H).toFixed(1)}`).join(' L ')} Z`}
+                fill="none"
+                stroke={isReady ? 'rgba(16, 185, 129, 0.6)' : 'rgba(244, 114, 182, 0.5)'}
+                strokeWidth="1.5"
+              />
+            )}
+
+            {guidance.meshContours?.noseBridge && guidance.meshContours.noseBridge.length > 0 && (
+              <path
+                d={`M ${guidance.meshContours.noseBridge.map(p => `${(p.x * W).toFixed(1)},${(p.y * H).toFixed(1)}`).join(' L ')}`}
+                fill="none"
+                stroke={isReady ? 'rgba(16, 185, 129, 0.5)' : 'rgba(56, 189, 248, 0.4)'}
+                strokeWidth="1.5"
+              />
+            )}
+
+            {guidance.meshContours?.leftEye && guidance.meshContours.leftEye.length > 0 && (
+              <path
+                d={`M ${guidance.meshContours.leftEye.map(p => `${(p.x * W).toFixed(1)},${(p.y * H).toFixed(1)}`).join(' L ')} Z`}
+                fill="none"
+                stroke={isReady ? 'rgba(16, 185, 129, 0.5)' : 'rgba(56, 189, 248, 0.35)'}
+                strokeWidth="1.2"
+              />
+            )}
+
+            {guidance.meshContours?.rightEye && guidance.meshContours.rightEye.length > 0 && (
+              <path
+                d={`M ${guidance.meshContours.rightEye.map(p => `${(p.x * W).toFixed(1)},${(p.y * H).toFixed(1)}`).join(' L ')} Z`}
+                fill="none"
+                stroke={isReady ? 'rgba(16, 185, 129, 0.5)' : 'rgba(56, 189, 248, 0.35)'}
+                strokeWidth="1.2"
+              />
+            )}
+
+            {/* Interpupillary Line & Roll Indicator */}
+            {guidance.detectedFaceLandmarks?.leftEye && guidance.detectedFaceLandmarks?.rightEye && (
+              <g>
+                <line
+                  x1={(guidance.detectedFaceLandmarks.leftEye.x * W).toFixed(1)}
+                  y1={(guidance.detectedFaceLandmarks.leftEye.y * H).toFixed(1)}
+                  x2={(guidance.detectedFaceLandmarks.rightEye.x * W).toFixed(1)}
+                  y2={(guidance.detectedFaceLandmarks.rightEye.y * H).toFixed(1)}
+                  stroke={isReady ? '#10b981' : '#38bdf8'}
+                  strokeWidth="2"
+                  strokeDasharray={isReady ? 'none' : '4,4'}
+                />
+                <circle
+                  cx={(guidance.detectedFaceLandmarks.leftEye.x * W).toFixed(1)}
+                  cy={(guidance.detectedFaceLandmarks.leftEye.y * H).toFixed(1)}
+                  r="4"
+                  fill={isReady ? '#10b981' : '#38bdf8'}
+                />
+                <circle
+                  cx={(guidance.detectedFaceLandmarks.rightEye.x * W).toFixed(1)}
+                  cy={(guidance.detectedFaceLandmarks.rightEye.y * H).toFixed(1)}
+                  r="4"
+                  fill={isReady ? '#10b981' : '#38bdf8'}
+                />
+              </g>
+            )}
+
+            {/* Dynamic Facial Midline for Frontal Views */}
+            {view.id.startsWith('FRONTAL') && guidance.detectedFaceLandmarks?.noseTip && guidance.detectedFaceLandmarks?.chinTip && (
+              <g>
+                <line
+                  x1={(guidance.detectedFaceLandmarks.noseTip.x * W).toFixed(1)}
+                  y1={((guidance.detectedFaceLandmarks.noseTip.y - 0.12) * H).toFixed(1)}
+                  x2={(guidance.detectedFaceLandmarks.chinTip.x * W).toFixed(1)}
+                  y2={(guidance.detectedFaceLandmarks.chinTip.y * H).toFixed(1)}
+                  stroke={isReady ? '#10b981' : '#38bdf8'}
+                  strokeWidth="2"
+                  strokeDasharray="5,4"
+                />
+              </g>
+            )}
+
+            {/* Dynamic Ricketts E-Line for Profile Views */}
+            {view.id.includes('PROFILE') && guidance.detectedFaceLandmarks?.noseTip && guidance.detectedFaceLandmarks?.chinTip && (
+              <g>
+                <line
+                  x1={(guidance.detectedFaceLandmarks.noseTip.x * W).toFixed(1)}
+                  y1={(guidance.detectedFaceLandmarks.noseTip.y * H).toFixed(1)}
+                  x2={(guidance.detectedFaceLandmarks.chinTip.x * W).toFixed(1)}
+                  y2={(guidance.detectedFaceLandmarks.chinTip.y * H).toFixed(1)}
+                  stroke={isReady ? '#10b981' : '#f59e0b'}
+                  strokeWidth="2.5"
+                  strokeDasharray={isReady ? 'none' : '5,4'}
+                />
+                <circle
+                  cx={(guidance.detectedFaceLandmarks.noseTip.x * W).toFixed(1)}
+                  cy={(guidance.detectedFaceLandmarks.noseTip.y * H).toFixed(1)}
+                  r="5"
+                  fill={isReady ? '#10b981' : '#f59e0b'}
+                />
+                <circle
+                  cx={(guidance.detectedFaceLandmarks.chinTip.x * W).toFixed(1)}
+                  cy={(guidance.detectedFaceLandmarks.chinTip.y * H).toFixed(1)}
+                  r="5"
+                  fill={isReady ? '#10b981' : '#f59e0b'}
+                />
+              </g>
+            )}
+
+            {/* Non-intrusive bottom spirit level gauge */}
+            {!isIntraoral && (
+              <g transform={`translate(${(0.5 * W).toFixed(1)}, ${(H - 120).toFixed(1)})`}>
+                <rect
+                  x="-50"
+                  y="-8"
+                  width="100"
+                  height="16"
+                  rx="8"
+                  fill="#080c14"
+                  fillOpacity={0.85}
+                  stroke={Math.abs(rollAngle) <= 3.5 ? '#10b981' : '#f59e0b'}
+                  strokeWidth={1.2}
+                />
+                <line x1="-8" y1="-8" x2="-8" y2="8" stroke="rgba(255,255,255,0.3)" strokeWidth="1" />
+                <line x1="8" y1="-8" x2="8" y2="8" stroke="rgba(255,255,255,0.3)" strokeWidth="1" />
+                <circle
+                  cx={Math.max(-40, Math.min(40, -rollAngle * 6))}
+                  cy="0"
+                  r="5.5"
+                  fill={Math.abs(rollAngle) <= 3.5 ? '#10b981' : '#f59e0b'}
+                  style={{ transition: 'cx 80ms ease-out' }}
+                />
+                <text
+                  x="0"
+                  y="20"
+                  fill="#94a3b8"
+                  fontSize="9"
+                  fontWeight="600"
+                  textAnchor="middle"
+                  fontFamily="monospace"
+                >
+                  {Math.abs(rollAngle) <= 3.5 ? 'LEVEL' : `${rollAngle > 0 ? '+' : ''}${rollAngle.toFixed(1)}°`}
+                </text>
+              </g>
+            )}
+          </svg>
+        </div>
+      )}
+
+      {/* ================================================================= */}
+      {/* 3. Z-40: ALIGNMENT & CORRECTION DIRECTIVE HUD PILL                */}
+      {/* ================================================================= */}
+      <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-40 pointer-events-none flex flex-col items-center gap-1.5 transition-all duration-200">
+        {isReady ? (
+          <div className="flex items-center gap-2 px-5 py-2 rounded-full bg-emerald-500/90 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/30 backdrop-blur-md animate-pulse">
+            <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+            <span>READY — HOLD STILL</span>
+          </div>
+        ) : guidance.primaryMessage ? (
+          <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-950/85 border border-amber-500/40 text-amber-300 font-bold text-xs uppercase tracking-wide shadow-lg backdrop-blur-md">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            <span>{guidance.primaryMessage}</span>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 };

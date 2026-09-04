@@ -42,7 +42,7 @@ export const QuickReviewOverlay: React.FC<QuickReviewOverlayProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/95 flex flex-col justify-between overflow-hidden animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-80 bg-black/95 flex flex-col justify-between overflow-hidden animate-in fade-in duration-200">
       {/* 1. Top Header */}
       <div className="pt-safe pt-4 px-4 pb-3 flex items-center justify-between bg-gradient-to-b from-black via-black/80 to-transparent z-10">
         <div>

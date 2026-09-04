@@ -9,6 +9,8 @@
  * is mathematically identical to what is saved in the clinical photo.
  */
 
+import type { FaceAnalysisResult } from '../ai_positioning/FaceAnalyzer';
+
 export interface CropRect {
   x: number;
   y: number;
@@ -180,5 +182,62 @@ export class CameraFrameTransform {
     );
 
     return canvas;
+  }
+
+  /**
+   * Transforms all coordinates and metrics of a FaceAnalysisResult from camera sensor space
+   * into viewport normalized space [0..1] x [0..1], accounting for object-cover crop and zoom.
+   */
+  public static transformFaceResultToViewport(
+    result: FaceAnalysisResult,
+    crop: CropRect,
+    sensorW: number,
+    sensorH: number
+  ): FaceAnalysisResult {
+    const transformPt = (pt: { x: number; y: number }) =>
+      this.sensorToViewportNorm(pt, crop, sensorW, sensorH);
+
+    const center = transformPt(result.center);
+
+    const bbTopLeft = transformPt({ x: result.boundingBox.x, y: result.boundingBox.y });
+    const bbWidth = (result.boundingBox.width * sensorW) / crop.width;
+    const bbHeight = (result.boundingBox.height * sensorH) / crop.height;
+
+    const faceHeightRatio = (result.faceHeightRatio * sensorH) / crop.height;
+
+    const transformedLandmarks = result.landmarks
+      ? Object.fromEntries(
+          Object.entries(result.landmarks).map(([k, v]) => [
+            k,
+            v ? transformPt(v) : undefined,
+          ])
+        )
+      : undefined;
+
+    const transformedContours = result.meshContours
+      ? {
+          faceOval: result.meshContours.faceOval.map(transformPt),
+          lips: result.meshContours.lips.map(transformPt),
+          leftEye: result.meshContours.leftEye.map(transformPt),
+          rightEye: result.meshContours.rightEye.map(transformPt),
+          noseBridge: result.meshContours.noseBridge.map(transformPt),
+          leftPupil: result.meshContours.leftPupil ? transformPt(result.meshContours.leftPupil) : undefined,
+          rightPupil: result.meshContours.rightPupil ? transformPt(result.meshContours.rightPupil) : undefined,
+        }
+      : undefined;
+
+    return {
+      ...result,
+      center,
+      boundingBox: {
+        x: Math.max(0, Math.min(1, bbTopLeft.x)),
+        y: Math.max(0, Math.min(1, bbTopLeft.y)),
+        width: Math.min(1, bbWidth),
+        height: Math.min(1, bbHeight),
+      },
+      faceHeightRatio,
+      landmarks: transformedLandmarks,
+      meshContours: transformedContours,
+    };
   }
 }

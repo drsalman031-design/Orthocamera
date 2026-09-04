@@ -26,7 +26,7 @@ export const PatientInfoModal: React.FC<PatientInfoModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-80 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
       <div
         className="w-full max-w-md bg-slate-950/95 border border-slate-700/60 rounded-3xl overflow-hidden shadow-[0_16px_50px_rgba(0,0,0,0.8)] backdrop-blur-2xl animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}

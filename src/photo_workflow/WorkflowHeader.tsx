@@ -42,7 +42,7 @@ const WorkflowHeaderComponent: React.FC<WorkflowHeaderProps> = ({
   const isCurrentCaptured = Boolean(activeCase.photos[currentView.id]);
 
   return (
-    <header className="absolute top-0 left-0 right-0 z-30 pt-safe flex flex-col pointer-events-auto select-none bg-gradient-to-b from-black/90 via-black/70 to-transparent pb-3">
+    <header className="absolute top-0 left-0 right-0 z-50 pt-safe flex flex-col pointer-events-auto select-none bg-gradient-to-b from-black/90 via-black/70 to-transparent pb-3">
       {/* 1. TOP BAR: Patient Profile Capsule + Step Counter */}
       <div className="px-3.5 pt-2 flex items-center justify-between gap-2">
         {/* Patient Capsule */}

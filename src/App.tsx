@@ -169,7 +169,7 @@ export default function App() {
       // Drive state machine with hysteresis to eliminate flickering countdowns
       const isMotionStatic = (newGuidance.motionScore ?? 0) < 20;
       const update = hysteresisRef.current.update(
-        newGuidance.readyScore,
+        newGuidance.readiness || newGuidance.readyScore,
         newGuidance.positionValid,
         newGuidance.angleValid,
         isMotionStatic,
@@ -218,8 +218,20 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Trigger Manual Shutter
+  // Trigger Manual Shutter (Fail-Closed gate unless allowManualCaptureOverride is enabled)
   const triggerManualCapture = () => {
+    const isReady = guidance.isReady || guidance.readiness?.ready;
+    if (!isReady && !settings.allowManualCaptureOverride) {
+      if (settings.hapticFeedback && typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([80, 50, 80]);
+      }
+      setGalleryToast({
+        message: 'Alignment Incomplete',
+        filename: guidance.primaryMessage || 'Align patient with guide before capturing',
+      });
+      setTimeout(() => setGalleryToast(null), 2500);
+      return;
+    }
     setAutoCaptureTrigger(true);
   };
 
@@ -387,8 +399,8 @@ export default function App() {
   const existingViewPhoto = activeCase.photos[currentView.id]?.dataUrl || null;
 
   return (
-    <div className="w-full h-[100dvh] bg-slate-950 flex flex-col items-center justify-center overflow-hidden font-sans text-white select-none">
-      <main className="relative w-full h-full max-w-md flex flex-col bg-black overflow-hidden shadow-2xl">
+    <div className="fixed inset-0 w-screen h-[100dvh] bg-black overflow-hidden font-sans text-white select-none">
+      <main className="relative w-full h-full bg-black overflow-hidden">
       {/* ========================================================================= */}
       {/* 1. PRIMARY LAYER: FULL-SCREEN EDGE-TO-EDGE CAMERA PREVIEW               */}
       {/* ========================================================================= */}
@@ -499,7 +511,7 @@ export default function App() {
 
       {/* 800ms Green Confirmation Flash Border for Hands-Free Capture */}
       {flashGreenConfirmation && (
-        <div className="fixed inset-0 z-50 pointer-events-none border-8 border-emerald-400 transition-opacity duration-300 animate-pulse" />
+        <div className="fixed inset-0 z-70 pointer-events-none border-8 border-emerald-400 transition-opacity duration-300 animate-pulse" />
       )}
 
       {/* ========================================================================= */}
@@ -508,7 +520,7 @@ export default function App() {
 
       {/* Toast Notification: Phone Storage / Gallery Save Confirmation */}
       {galleryToast && (
-        <div className="fixed top-12 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top duration-300 pointer-events-none">
+        <div className="fixed top-12 left-1/2 -translate-x-1/2 z-80 animate-in fade-in slide-in-from-top duration-300 pointer-events-none">
           <div
             className={`border px-4 py-2 rounded-full shadow-[0_0_25px_rgba(16,185,129,0.5)] backdrop-blur-xl flex items-center gap-2.5 text-xs font-medium ${
               galleryToast.message === 'Save Failed'

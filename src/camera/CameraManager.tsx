@@ -653,6 +653,27 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
                 faceRes = mirrorFaceResult(faceRes);
               }
 
+              // Synchronize coordinates: Transform face landmarks & contours to viewport normalized coordinates [0..1]
+              // strictly using CameraFrameTransform as single source of truth for object-cover crop & zoom
+              if (faceRes && video.videoWidth > 0 && video.videoHeight > 0) {
+                const vpW = containerRef.current?.clientWidth || window.innerWidth;
+                const vpH = containerRef.current?.clientHeight || window.innerHeight;
+                const visibleCrop = CameraFrameTransform.calculateVisibleCrop(
+                  video.videoWidth,
+                  video.videoHeight,
+                  vpW,
+                  vpH,
+                  zoomLevelRef.current,
+                  isHardwareZoomRef.current
+                );
+                faceRes = CameraFrameTransform.transformFaceResultToViewport(
+                  faceRes,
+                  visibleCrop,
+                  video.videoWidth,
+                  video.videoHeight
+                );
+              }
+
               // Lateral Profile Evaluation (state machine tracks 90° lateral pose and capture eligibility)
               if (activeView.id === 'RIGHT_PROFILE' || activeView.id === 'LEFT_PROFILE') {
                 const isRight = activeView.id === 'RIGHT_PROFILE';
@@ -801,7 +822,7 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
         playsInline
         autoPlay
         muted
-        className="absolute inset-0 w-full h-full object-cover transition-transform duration-100 ease-out"
+        className="absolute inset-0 w-full h-full object-cover z-0 transition-transform duration-100 ease-out"
         style={{
           transform: `${isHardwareZoom ? '' : `scale(${zoomLevel})`} ${
             facingMode === 'user' ? 'scaleX(-1)' : ''

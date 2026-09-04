@@ -36,7 +36,7 @@ export const GhostOverlayManager: React.FC<GhostOverlayManagerProps> = ({
       )}
 
       {/* 2. Floating Quick Ghost Control Pill (Bottom Right above zoom) */}
-      <div className="absolute right-4 bottom-28 z-30 flex flex-col items-end gap-1.5 pointer-events-auto">
+      <div className="absolute right-4 bottom-28 z-60 flex flex-col items-end gap-1.5 pointer-events-auto">
         <button
           onClick={() => onToggle(!isEnabled)}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold backdrop-blur-xl border transition-all ${

@@ -217,52 +217,122 @@ describe('ClinicalAlignmentEngine', () => {
     expect(result.landmarksValid).toBe(false);
   });
 
-  it('guides patient with correct direction on centering error', () => {
-    // Patient face shifted far right (center.x = 0.85)
+  it('guides patient with correct direction on centering error (left, right, up, down)', () => {
+    // Patient face shifted far right (center.x = 0.85) -> Must instruct MOVE LEFT
     const rightShifted: FaceAnalysisResult = {
       ...validMediaPipeFace,
       center: { x: 0.85, y: 0.45 },
     };
-    const result = ClinicalAlignmentEngine.evaluate({
+    const resultRight = ClinicalAlignmentEngine.evaluate({
       faceResult: rightShifted,
       currentView: frontalRestView,
       isStable: true,
     });
-    expect(result.ready).toBe(false);
-    expect(result.correction.direction).toBe('RIGHT');
-    expect(result.correction.message).toContain('Move camera right');
+    expect(resultRight.ready).toBe(false);
+    expect(resultRight.correction.direction).toBe('LEFT');
+    expect(resultRight.correction.message).toBe('MOVE LEFT');
+
+    // Patient face shifted far left (center.x = 0.15) -> Must instruct MOVE RIGHT (Prompt 16)
+    const leftShifted: FaceAnalysisResult = {
+      ...validMediaPipeFace,
+      center: { x: 0.15, y: 0.45 },
+    };
+    const resultLeft = ClinicalAlignmentEngine.evaluate({
+      faceResult: leftShifted,
+      currentView: frontalRestView,
+      isStable: true,
+    });
+    expect(resultLeft.ready).toBe(false);
+    expect(resultLeft.correction.direction).toBe('RIGHT');
+    expect(resultLeft.correction.message).toBe('MOVE RIGHT');
+
+    // Patient face shifted far up (center.y = 0.15) -> Must instruct MOVE DOWN
+    const upShifted: FaceAnalysisResult = {
+      ...validMediaPipeFace,
+      center: { x: 0.5, y: 0.15 },
+    };
+    const resultUp = ClinicalAlignmentEngine.evaluate({
+      faceResult: upShifted,
+      currentView: frontalRestView,
+      isStable: true,
+    });
+    expect(resultUp.ready).toBe(false);
+    expect(resultUp.correction.direction).toBe('DOWN');
+    expect(resultUp.correction.message).toBe('MOVE DOWN');
+
+    // Patient face shifted far down (center.y = 0.85) -> Must instruct MOVE UP
+    const downShifted: FaceAnalysisResult = {
+      ...validMediaPipeFace,
+      center: { x: 0.5, y: 0.85 },
+    };
+    const resultDown = ClinicalAlignmentEngine.evaluate({
+      faceResult: downShifted,
+      currentView: frontalRestView,
+      isStable: true,
+    });
+    expect(resultDown.ready).toBe(false);
+    expect(resultDown.correction.direction).toBe('UP');
+    expect(resultDown.correction.message).toBe('MOVE UP');
   });
 
-  it('guides patient with correct direction on distance error', () => {
+  it('guides patient with correct direction on distance error (closer, back)', () => {
     // Face too small / far away (faceHeightRatio = 0.20)
     const farFace: FaceAnalysisResult = {
       ...validMediaPipeFace,
       faceHeightRatio: 0.2,
     };
-    const result = ClinicalAlignmentEngine.evaluate({
+    const resultFar = ClinicalAlignmentEngine.evaluate({
       faceResult: farFace,
       currentView: frontalRestView,
       isStable: true,
     });
-    expect(result.ready).toBe(false);
-    expect(result.correction.direction).toBe('MOVE_CLOSER');
-    expect(result.correction.message).toContain('Move closer');
-  });
+    expect(resultFar.ready).toBe(false);
+    expect(resultFar.correction.direction).toBe('MOVE_CLOSER');
+    expect(resultFar.correction.message).toBe('MOVE CLOSER');
 
-  it('guides patient with correct direction on roll tilt', () => {
-    // Head tilted 12 degrees to the right
-    const tiltedFace: FaceAnalysisResult = {
+    // Face too big / close (faceHeightRatio = 0.90)
+    const closeFace: FaceAnalysisResult = {
       ...validMediaPipeFace,
-      rollDeg: 12,
+      faceHeightRatio: 0.9,
     };
-    const result = ClinicalAlignmentEngine.evaluate({
-      faceResult: tiltedFace,
+    const resultClose = ClinicalAlignmentEngine.evaluate({
+      faceResult: closeFace,
       currentView: frontalRestView,
       isStable: true,
     });
-    expect(result.ready).toBe(false);
-    expect(result.correction.direction).toBe('ROTATE_LEFT');
-    expect(result.correction.message).toContain('Level head (tilt left)');
+    expect(resultClose.ready).toBe(false);
+    expect(resultClose.correction.direction).toBe('MOVE_BACK');
+    expect(resultClose.correction.message).toBe('MOVE BACK');
+  });
+
+  it('guides patient with correct direction on roll tilt (rotate left, rotate right)', () => {
+    // Head tilted 12 degrees to the right -> Must instruct ROTATE LEFT
+    const tiltedRightFace: FaceAnalysisResult = {
+      ...validMediaPipeFace,
+      rollDeg: 12,
+    };
+    const resultRotateLeft = ClinicalAlignmentEngine.evaluate({
+      faceResult: tiltedRightFace,
+      currentView: frontalRestView,
+      isStable: true,
+    });
+    expect(resultRotateLeft.ready).toBe(false);
+    expect(resultRotateLeft.correction.direction).toBe('ROTATE_LEFT');
+    expect(resultRotateLeft.correction.message).toBe('ROTATE LEFT');
+
+    // Head tilted -12 degrees to the left -> Must instruct ROTATE RIGHT
+    const tiltedLeftFace: FaceAnalysisResult = {
+      ...validMediaPipeFace,
+      rollDeg: -12,
+    };
+    const resultRotateRight = ClinicalAlignmentEngine.evaluate({
+      faceResult: tiltedLeftFace,
+      currentView: frontalRestView,
+      isStable: true,
+    });
+    expect(resultRotateRight.ready).toBe(false);
+    expect(resultRotateRight.correction.direction).toBe('ROTATE_RIGHT');
+    expect(resultRotateRight.correction.message).toBe('ROTATE RIGHT');
   });
 
   it('enforces smile condition for FRONTAL_SMILE view', () => {
@@ -300,7 +370,7 @@ describe('ClinicalAlignmentEngine', () => {
     });
     expect(result.ready).toBe(false);
     expect(result.correction.direction).toBe('RIGHT');
-    expect(result.correction.message).toContain('Turn patient further right');
+    expect(result.correction.message).toContain('TURN RIGHT');
   });
 
   it('rejects 45 degree oblique and 70 degree yaw for 90 degree lateral profile', () => {

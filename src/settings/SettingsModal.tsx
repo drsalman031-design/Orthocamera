@@ -20,7 +20,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-80 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
       <div
         className="w-full max-w-md bg-slate-950/95 border border-slate-700/60 rounded-3xl overflow-hidden shadow-[0_16px_50px_rgba(0,0,0,0.8)] backdrop-blur-2xl animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
@@ -267,6 +267,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className="sr-only peer"
                 />
                 <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500 shadow-inner"></div>
+              </label>
+            </div>
+          </div>
+
+          {/* 6. Manual Capture Positioning Gate Override */}
+          <div className="bg-slate-900/80 border border-slate-800/90 rounded-2xl p-4 space-y-3 shadow-md">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="font-bold text-slate-100 text-sm block">Bypass Alignment Gate on Manual Shutter</span>
+                <p className="text-slate-400 text-[11px] leading-relaxed">
+                  When disabled (recommended), manual capture enforces clinical alignment validation before capturing.
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer ml-3">
+                <input
+                  type="checkbox"
+                  checked={!!settings.allowManualCaptureOverride}
+                  onChange={(e) =>
+                    onUpdateSettings({ ...settings, allowManualCaptureOverride: e.target.checked })
+                  }
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500 shadow-inner"></div>
               </label>
             </div>
           </div>

@@ -38,7 +38,7 @@ const CameraControlsComponent: React.FC<CameraControlsProps> = ({
   const isReady = guidance.isReady;
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-30 pb-safe pb-4 pt-3 flex flex-col items-center pointer-events-auto bg-gradient-to-t from-black via-black/85 to-transparent select-none">
+    <div className="absolute bottom-0 left-0 right-0 z-60 pb-safe pb-4 pt-3 flex flex-col items-center pointer-events-auto bg-gradient-to-t from-black via-black/85 to-transparent select-none">
       {/* 1. Zoom Segmented Bar & Auto-Capture Toggle */}
       <div className="flex items-center gap-2 mb-3">
         {/* Zoom Selector */}
