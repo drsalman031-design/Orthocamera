@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Camera, CameraOff, RefreshCw } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 import { CapturedPhoto, LiveGuidanceState, OrthodonticViewDefinition, QualityCheckResult } from '../types';
 import { FaceAnalysisResult, OnDeviceFaceAnalyzer } from '../ai_positioning/FaceAnalyzer';
 import { IntraoralAnalysisResult, OnDeviceIntraoralAnalyzer } from '../ai_positioning/IntraoralAnalyzer';
@@ -220,36 +221,22 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
         return;
       }
 
-      // Enumerate available camera devices early to identify DroidCam
-      let videoDevices: MediaDeviceInfo[] = [];
-      try {
-        const allDevices = await navigator.mediaDevices.enumerateDevices();
-        videoDevices = allDevices.filter((d) => d.kind === 'videoinput');
-        if (videoDevices.length > 0) {
-          setAvailableCameras(videoDevices);
-        }
-      } catch (enumErr) {
-        console.debug('Error enumerating devices:', enumErr);
-      }
-
-      // Automatically search for DroidCam video source
-      const droidCamDevice = videoDevices.find((d) =>
-        /droid|phone|source\s*2/i.test(d.label)
-      );
-
-      const targetDeviceId =
-        specificDeviceId !== undefined
-          ? specificDeviceId
-          : (selectedDeviceId || (droidCamDevice ? droidCamDevice.deviceId : null));
+      // Determine if running on a mobile device / native Android APK
+      const isMobile =
+        Capacitor.isNativePlatform() ||
+        (typeof navigator !== 'undefined' &&
+          /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent));
 
       const constraintTiers: MediaStreamConstraints[] = [];
 
-      // 1. If DroidCam or a specific camera was targeted, prioritize it with 1080p
-      if (targetDeviceId) {
+      if (isMobile) {
+        // MOBILE ULTRA-FAST PATH (< 2 sec launch):
+        // Immediately query the native camera sensor without blocking on device enumeration
+        // Defaults to 'environment' (rear camera) for clinical dental photography
         constraintTiers.push(
           {
             video: {
-              deviceId: { exact: targetDeviceId },
+              facingMode: { ideal: targetFacing },
               width: { ideal: 1920 },
               height: { ideal: 1080 },
             },
@@ -257,52 +244,113 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
           },
           {
             video: {
-              deviceId: { exact: targetDeviceId },
+              facingMode: { ideal: targetFacing },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
             },
+            audio: false,
+          },
+          {
+            video: {
+              facingMode: { ideal: targetFacing },
+            },
+            audio: false,
+          },
+          {
+            video: {
+              facingMode: { ideal: targetFacing === 'environment' ? 'user' : 'environment' },
+            },
+            audio: false,
+          },
+          {
+            video: true,
+            audio: false,
+          }
+        );
+      } else {
+        // DESKTOP PATH:
+        // Enumerate available camera devices early to identify DroidCam or virtual webcam
+        let videoDevices: MediaDeviceInfo[] = [];
+        try {
+          const allDevices = await navigator.mediaDevices.enumerateDevices();
+          videoDevices = allDevices.filter((d) => d.kind === 'videoinput');
+          if (videoDevices.length > 0) {
+            setAvailableCameras(videoDevices);
+          }
+        } catch (enumErr) {
+          console.debug('Error enumerating devices:', enumErr);
+        }
+
+        // Automatically search for DroidCam video source
+        const droidCamDevice = videoDevices.find((d) =>
+          /droid|phone|source\s*2/i.test(d.label)
+        );
+
+        const targetDeviceId =
+          specificDeviceId !== undefined
+            ? specificDeviceId
+            : (selectedDeviceId || (droidCamDevice ? droidCamDevice.deviceId : null));
+
+        // 1. If DroidCam or a specific camera was targeted, prioritize it with 1080p
+        if (targetDeviceId) {
+          constraintTiers.push(
+            {
+              video: {
+                deviceId: { exact: targetDeviceId },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
+              },
+              audio: false,
+            },
+            {
+              video: {
+                deviceId: { exact: targetDeviceId },
+              },
+              audio: false,
+            }
+          );
+        }
+
+        // 2. High-resolution preferred with requested facing mode
+        constraintTiers.push(
+          {
+            video: {
+              facingMode: { ideal: targetFacing },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+            },
+            audio: false,
+          },
+          // 3. Standard 720p with requested facing mode
+          {
+            video: {
+              facingMode: { ideal: targetFacing },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+            },
+            audio: false,
+          },
+          // 4. Any resolution with requested facing mode
+          {
+            video: {
+              facingMode: { ideal: targetFacing },
+            },
+            audio: false,
+          },
+          // 5. Alternate facing mode (crucial for desktop/laptop webcams lacking 'environment' rear camera)
+          {
+            video: {
+              facingMode: { ideal: targetFacing === 'environment' ? 'user' : 'environment' },
+            },
+            audio: false,
+          },
+          // 6. Bare minimum video constraint: ANY available camera
+          {
+            video: true,
             audio: false,
           }
         );
       }
-
-      // 2. High-resolution preferred with requested facing mode
-      constraintTiers.push(
-        {
-          video: {
-            facingMode: { ideal: targetFacing },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
-          audio: false,
-        },
-        // 3. Standard 720p with requested facing mode
-        {
-          video: {
-            facingMode: { ideal: targetFacing },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
-          audio: false,
-        },
-        // 4. Any resolution with requested facing mode
-        {
-          video: {
-            facingMode: { ideal: targetFacing },
-          },
-          audio: false,
-        },
-        // 5. Alternate facing mode (crucial for desktop/laptop webcams lacking 'environment' rear camera)
-        {
-          video: {
-            facingMode: { ideal: targetFacing === 'environment' ? 'user' : 'environment' },
-          },
-          audio: false,
-        },
-        // 6. Bare minimum video constraint: ANY available camera
-        {
-          video: true,
-          audio: false,
-        }
-      );
 
       let acquiredStream: MediaStream | null = null;
       let lastErr: unknown = null;
