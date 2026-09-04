@@ -37,11 +37,11 @@ export interface FaceAnalysisResult {
   meshContours?: MeshContours;
   // Landmark coordinates normalized (only present if truly detected by ML/vision)
   landmarks?: {
-    leftEye: { x: number; y: number };
-    rightEye: { x: number; y: number };
-    noseTip: { x: number; y: number };
-    mouthCenter: { x: number; y: number };
-    chinTip: { x: number; y: number };
+    leftEye?: { x: number; y: number };
+    rightEye?: { x: number; y: number };
+    noseTip?: { x: number; y: number };
+    mouthCenter?: { x: number; y: number };
+    chinTip?: { x: number; y: number };
     leftCheek?: { x: number; y: number };
     rightCheek?: { x: number; y: number };
     leftMouthCorner?: { x: number; y: number };
@@ -104,7 +104,7 @@ export class OnDeviceFaceAnalyzer implements IFaceAnalyzer {
 
       const now = performance.now();
 
-      // 1. Check MediaPipe on-device ML FaceLandmarker first (Gold Standard)
+      // 1. Check MediaPipe on-device ML FaceLandmarker first (preferred high-quality detector)
       if (MediaPipeVision.getStatus().isReady) {
         const mpSource =
           videoElement && videoElement.readyState >= 2 && videoElement.videoWidth > 0
@@ -172,21 +172,23 @@ export class OnDeviceFaceAnalyzer implements IFaceAnalyzer {
                 }
               }
 
-              // Do NOT fabricate missing landmarks
-              const detectedLandmarks =
-                leftEye && rightEye
-                  ? {
-                      leftEye,
-                      rightEye,
-                      noseTip: center,
-                      mouthCenter: mouth || { x: center.x, y: center.y + normBox.height * 0.3 },
-                      chinTip: { x: center.x, y: center.y + normBox.height * 0.5 },
-                    }
-                  : undefined;
+              // Only include genuine landmarks returned by native detector.
+              // NEVER fabricate missing noseTip, chinTip, or mouthCenter coordinates from bounding box centers or offsets.
+              const hasAnyLandmark = !!(leftEye || rightEye || mouth);
+              const detectedLandmarks = hasAnyLandmark
+                ? {
+                    leftEye,
+                    rightEye,
+                    mouthCenter: mouth,
+                    // noseTip, chinTip, etc. are not detected by native FaceDetector and are strictly left undefined
+                  }
+                : undefined;
+
+              const landmarkCount = (leftEye ? 1 : 0) + (rightEye ? 1 : 0) + (mouth ? 1 : 0);
 
               this.lastNativeResult = {
                 detected: true,
-                confidence: 0.75,
+                confidence: 0.5,
                 aiEngine: 'native',
                 boundingBox: normBox,
                 center,
@@ -198,19 +200,19 @@ export class OnDeviceFaceAnalyzer implements IFaceAnalyzer {
                 eyeLineAngleDeg,
                 landmarks: detectedLandmarks,
                 pose: {
-                  yawDeg: null, // Native 2D detector cannot measure 3D yaw accurately
+                  yawDeg: null, // Native 2D detector cannot measure 3D yaw/pitch
                   pitchDeg: null,
                   rollDeg: eyeLineAngleDeg,
-                  confidence: 0.5,
-                  source: 'geometric',
+                  confidence: 0.3,
+                  source: 'unavailable',
                 },
                 landmarkQuality: {
-                  available: !!detectedLandmarks,
-                  landmarkCount: detectedLandmarks ? 5 : 0,
-                  requiredLandmarksPresent: false,
-                  symmetryScore: 0.5,
-                  geometryScore: 0.5,
-                  confidence: 0.4,
+                  available: false, // Incomplete 2D landmarks cannot be marked as available for clinical capture
+                  landmarkCount,
+                  requiredLandmarksPresent: false, // Incomplete
+                  symmetryScore: leftEye && rightEye ? 0.5 : 0.2,
+                  geometryScore: 0.2,
+                  confidence: 0.2,
                 },
               };
             } else {

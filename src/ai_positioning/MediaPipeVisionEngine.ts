@@ -3,7 +3,7 @@
  *
  * Provides real-time, on-device ML inference using Google MediaPipe FaceLandmarker.
  * Extracts 468 3D facial landmarks, blendshapes (smile score, jaw open, blink),
- * and calculates exact 3D head pose (Roll, Yaw, Pitch) with sub-degree accuracy.
+ * and calculates 3D head pose (Roll, Yaw, Pitch) using MediaPipe-based 3D head-pose estimation.
  *
  * Runs completely locally in browser WebAssembly/WebGL - 100% HIPAA compliant.
  */
@@ -330,17 +330,19 @@ class MediaPipeVisionEngineSingleton {
         lipApertureRatio: lipAperture,
         meshContours,
         landmarks: {
-          leftEye: { x: leftEyeOuter.x, y: leftEyeOuter.y },
-          rightEye: { x: rightEyeOuter.x, y: rightEyeOuter.y },
-          noseTip: { x: noseTip.x, y: noseTip.y },
-          mouthCenter: { x: (leftMouth.x + rightMouth.x) / 2, y: (upperLip.y + lowerLip.y) / 2 },
-          chinTip: { x: chinTip.x, y: chinTip.y },
-          leftCheek: { x: landmarks[234]?.x ?? minX, y: landmarks[234]?.y ?? centerY },
-          rightCheek: { x: landmarks[454]?.x ?? maxX, y: landmarks[454]?.y ?? centerY },
-          leftMouthCorner: { x: leftMouth.x, y: leftMouth.y },
-          rightMouthCorner: { x: rightMouth.x, y: rightMouth.y },
-          upperLip: { x: upperLip.x, y: upperLip.y },
-          lowerLip: { x: lowerLip.x, y: lowerLip.y },
+          leftEye: leftEyeOuter ? { x: leftEyeOuter.x, y: leftEyeOuter.y } : undefined,
+          rightEye: rightEyeOuter ? { x: rightEyeOuter.x, y: rightEyeOuter.y } : undefined,
+          noseTip: noseTip ? { x: noseTip.x, y: noseTip.y } : undefined,
+          mouthCenter: (leftMouth && rightMouth && upperLip && lowerLip)
+            ? { x: (leftMouth.x + rightMouth.x) / 2, y: (upperLip.y + lowerLip.y) / 2 }
+            : undefined,
+          chinTip: chinTip ? { x: chinTip.x, y: chinTip.y } : undefined,
+          leftCheek: landmarks[234] ? { x: landmarks[234].x, y: landmarks[234].y } : undefined,
+          rightCheek: landmarks[454] ? { x: landmarks[454].x, y: landmarks[454].y } : undefined,
+          leftMouthCorner: leftMouth ? { x: leftMouth.x, y: leftMouth.y } : undefined,
+          rightMouthCorner: rightMouth ? { x: rightMouth.x, y: rightMouth.y } : undefined,
+          upperLip: upperLip ? { x: upperLip.x, y: upperLip.y } : undefined,
+          lowerLip: lowerLip ? { x: lowerLip.x, y: lowerLip.y } : undefined,
         },
         pose,
         landmarkQuality,

@@ -38,12 +38,14 @@ export class ProfileFallbackEngine {
     currentResult: FaceAnalysisResult | null,
     timestamp: number = Date.now()
   ): ProfileStateResult {
-    const targetYawSign = isRightProfile ? 1 : -1;
-    const minProfileYaw = 70; // 70 to 95 degrees yaw required for strict 90° profile
+    const minProfileYaw = 82; // Strictly 82° to 98° required for 90° lateral profile
+    const maxProfileYaw = 98;
+    const maxRoll = 6;
 
-    if (currentResult && currentResult.detected && currentResult.confidence > 0.4) {
+    if (currentResult && currentResult.detected && currentResult.confidence >= 0.35) {
       const currentYaw = currentResult.yawDeg;
-      const matchesDirection = isRightProfile ? currentYaw > 35 : currentYaw < -35;
+      const currentRoll = currentResult.rollDeg;
+      const matchesDirection = isRightProfile ? currentYaw > 25 : currentYaw < -25;
 
       if (matchesDirection) {
         // Active fresh tracking
@@ -51,23 +53,39 @@ export class ProfileFallbackEngine {
         this.lastStableTimestamp = timestamp;
         this.currentState = 'TRACKING';
 
-        const isFullyTurned = Math.abs(currentYaw) >= minProfileYaw;
-        const isRollLevel = Math.abs(currentResult.rollDeg) <= 6;
+        const isFullyTurned = isRightProfile
+          ? currentYaw >= minProfileYaw && currentYaw <= maxProfileYaw
+          : currentYaw <= -minProfileYaw && currentYaw >= -maxProfileYaw;
+
+        const isOverTurned = isRightProfile
+          ? currentYaw > maxProfileYaw
+          : currentYaw < -maxProfileYaw;
+
+        const isRollLevel = Math.abs(currentRoll) <= maxRoll;
         const isAligned = isFullyTurned && isRollLevel;
+
+        let guidanceMessage = 'Profile Aligned ✓';
+        if (!isFullyTurned) {
+          if (isOverTurned) {
+            guidanceMessage = 'Turn slightly back toward center';
+          } else {
+            guidanceMessage = isRightProfile
+              ? 'Turn patient further right (target ~90° profile)'
+              : 'Turn patient further left (target ~90° profile)';
+          }
+        } else if (!isRollLevel) {
+          guidanceMessage = 'Level patient head';
+        }
 
         return {
           state: 'TRACKING',
           estimatedYaw: currentYaw,
-          estimatedRoll: currentResult.rollDeg,
+          estimatedRoll: currentRoll,
           confidence: currentResult.confidence,
           isProfileAligned: isAligned,
           isFresh: true,
           isCaptureEligible: isAligned,
-          guidanceMessage: !isFullyTurned
-            ? `Turn patient further ${isRightProfile ? 'right' : 'left'} (90° profile)`
-            : !isRollLevel
-            ? 'Level patient head'
-            : 'Profile Aligned ✓',
+          guidanceMessage,
         };
       }
     }
@@ -95,8 +113,8 @@ export class ProfileFallbackEngine {
     this.currentState = 'INVALID_POSITION';
     return {
       state: 'INVALID_POSITION',
-      estimatedYaw: targetYawSign * 45,
-      estimatedRoll: 0,
+      estimatedYaw: currentResult?.yawDeg ?? 0,
+      estimatedRoll: currentResult?.rollDeg ?? 0,
       confidence: 0,
       isProfileAligned: false,
       isFresh: false,

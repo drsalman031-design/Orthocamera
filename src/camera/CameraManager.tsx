@@ -7,7 +7,7 @@ import { OverlayGuidanceEngine } from '../ai_positioning/OverlayGuidanceEngine';
 import { ImageQualityAnalyzer } from '../quality_analysis/ImageQualityAnalyzer';
 import { CameraFrameTransform } from './CameraFrameTransform';
 import { MotionEngine } from '../ai_positioning/MotionEngine';
-import { ProfileFallbackEngine } from '../ai_positioning/ProfileFallbackEngine';
+import { ProfileFallbackEngine, ProfileStateResult } from '../ai_positioning/ProfileFallbackEngine';
 
 export interface CameraTelemetry {
   cameraFps: number;
@@ -82,13 +82,19 @@ function mirrorFaceResult(result: FaceAnalysisResult): FaceAnalysisResult {
       ? {
           leftEye: result.landmarks.rightEye
             ? { x: 1.0 - result.landmarks.rightEye.x, y: result.landmarks.rightEye.y }
-            : { x: 1.0 - result.landmarks.leftEye.x, y: result.landmarks.leftEye.y },
+            : (result.landmarks.leftEye ? { x: 1.0 - result.landmarks.leftEye.x, y: result.landmarks.leftEye.y } : undefined),
           rightEye: result.landmarks.leftEye
             ? { x: 1.0 - result.landmarks.leftEye.x, y: result.landmarks.leftEye.y }
-            : { x: 1.0 - result.landmarks.rightEye.x, y: result.landmarks.rightEye.y },
-          noseTip: { x: 1.0 - result.landmarks.noseTip.x, y: result.landmarks.noseTip.y },
-          mouthCenter: { x: 1.0 - result.landmarks.mouthCenter.x, y: result.landmarks.mouthCenter.y },
-          chinTip: { x: 1.0 - result.landmarks.chinTip.x, y: result.landmarks.chinTip.y },
+            : (result.landmarks.rightEye ? { x: 1.0 - result.landmarks.rightEye.x, y: result.landmarks.rightEye.y } : undefined),
+          noseTip: result.landmarks.noseTip
+            ? { x: 1.0 - result.landmarks.noseTip.x, y: result.landmarks.noseTip.y }
+            : undefined,
+          mouthCenter: result.landmarks.mouthCenter
+            ? { x: 1.0 - result.landmarks.mouthCenter.x, y: result.landmarks.mouthCenter.y }
+            : undefined,
+          chinTip: result.landmarks.chinTip
+            ? { x: 1.0 - result.landmarks.chinTip.x, y: result.landmarks.chinTip.y }
+            : undefined,
           leftCheek: result.landmarks.rightCheek
             ? { x: 1.0 - result.landmarks.rightCheek.x, y: result.landmarks.rightCheek.y }
             : undefined,
@@ -636,6 +642,7 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
             const activeView = currentViewRef.current;
             let faceRes: FaceAnalysisResult | null = null;
             let intraRes: IntraoralAnalysisResult | null = null;
+            let profileState: ProfileStateResult | null = null;
 
             if (activeView.category === 'extraoral') {
               faceRes = faceAnalyzerRef.current.analyzeFrame(sampleCanvas, ctx, 240, 180, video);
@@ -646,28 +653,10 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
                 faceRes = mirrorFaceResult(faceRes);
               }
 
-              // Lateral Profile Fallback Engine
+              // Lateral Profile Evaluation (state machine tracks 90° lateral pose and capture eligibility)
               if (activeView.id === 'RIGHT_PROFILE' || activeView.id === 'LEFT_PROFILE') {
                 const isRight = activeView.id === 'RIGHT_PROFILE';
-                const profileResult = profileFallbackRef.current.evaluateProfile(isRight, faceRes);
-
-                if (profileResult.state === 'TEMPORARILY_LOST') {
-                  const lastStable = profileFallbackRef.current.getLastStableResult();
-                  if (lastStable) {
-                    faceRes = {
-                      ...lastStable,
-                      detected: true,
-                      confidence: profileResult.confidence,
-                      yawDeg: profileResult.estimatedYaw,
-                      rollDeg: profileResult.estimatedRoll,
-                    };
-                  } else if (faceRes) {
-                    faceRes.detected = true;
-                    faceRes.confidence = profileResult.confidence;
-                    faceRes.yawDeg = profileResult.estimatedYaw;
-                    faceRes.rollDeg = profileResult.estimatedRoll;
-                  }
-                }
+                profileState = profileFallbackRef.current.evaluateProfile(isRight, faceRes);
               }
             } else {
               intraRes = intraoralAnalyzerRef.current.analyzeIntraoralFrame(
@@ -686,6 +675,7 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
               view: activeView,
               faceResult: faceRes,
               intraoralResult: intraRes,
+              profileState,
               rawLuminance: motionRes.measuredLuminance,
               rawSharpness: motionRes.measuredSharpness,
               motionScore: motionRes.motionScore,

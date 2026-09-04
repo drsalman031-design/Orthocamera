@@ -173,11 +173,11 @@ export interface LiveGuidanceState {
   aiEngine?: 'mediapipe' | 'native' | 'chroma';
   meshContours?: MeshContours;
   detectedFaceLandmarks?: {
-    leftEye: { x: number; y: number };
-    rightEye: { x: number; y: number };
-    noseTip: { x: number; y: number };
-    mouthCenter: { x: number; y: number };
-    chinTip: { x: number; y: number };
+    leftEye?: { x: number; y: number };
+    rightEye?: { x: number; y: number };
+    noseTip?: { x: number; y: number };
+    mouthCenter?: { x: number; y: number };
+    chinTip?: { x: number; y: number };
     leftCheek?: { x: number; y: number };
     rightCheek?: { x: number; y: number };
     leftMouthCorner?: { x: number; y: number };

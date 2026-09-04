@@ -9,11 +9,13 @@ import {
 } from '../types';
 import { FaceAnalysisResult } from './FaceAnalyzer';
 import { IntraoralAnalysisResult } from './IntraoralAnalyzer';
+import { ProfileStateResult } from './ProfileFallbackEngine';
 
 export interface GuidanceEvaluationInput {
   view: OrthodonticViewDefinition;
   faceResult?: FaceAnalysisResult | null;
   intraoralResult?: IntraoralAnalysisResult | null;
+  profileState?: ProfileStateResult | null;
   rawLuminance?: number;
   rawSharpness?: number;
   motionScore?: number;
@@ -122,30 +124,61 @@ export class OverlayGuidanceEngine {
       const yaw = faceResult.yawDeg;
       const pitch = faceResult.pitchDeg;
       const faceRatio = faceResult.faceHeightRatio;
+
       const pose: FacePose = faceResult.pose || {
-        yawDeg: yaw,
-        pitchDeg: pitch,
-        rollDeg: roll,
-        confidence: faceResult.confidence,
-        source: 'geometric',
+        yawDeg: null,
+        pitchDeg: null,
+        rollDeg: null,
+        confidence: 0,
+        source: 'unavailable',
       };
       const landmarkQuality: LandmarkQuality = faceResult.landmarkQuality || {
-        available: !!faceResult.landmarks,
-        landmarkCount: faceResult.landmarks ? 11 : 0,
-        requiredLandmarksPresent: !!faceResult.landmarks,
-        symmetryScore: 0.7,
-        geometryScore: 0.7,
-        confidence: faceResult.confidence,
+        available: false,
+        landmarkCount: 0,
+        requiredLandmarksPresent: false,
+        symmetryScore: 0,
+        geometryScore: 0,
+        confidence: 0,
       };
 
-      // 1. Face & Landmark Quality Check
-      const faceDetectionValid = faceResult.detected && faceResult.confidence >= 0.35;
-      const landmarkQualityValid = spec.requiresFaceLandmarks
-        ? landmarkQuality.available && landmarkQuality.confidence >= spec.minLandmarkConfidence
-        : true;
-      const poseQualityValid = pose.source !== 'unavailable' && pose.confidence >= spec.minPoseConfidence;
+      // 1. High-Quality Detector Check: MediaPipe is the strict source for clinical extraoral capture
+      const isHighQualityDetector = faceResult.aiEngine === 'mediapipe';
 
-      // 2. Position / Centering Check
+      // 2. Face Detection Validity Check
+      const faceDetectionValid = faceResult.detected && faceResult.confidence >= 0.35;
+
+      // 3. Complete Anatomical Landmarks Check
+      const hasRequiredPoints = !!(
+        faceResult.landmarks &&
+        faceResult.landmarks.leftEye &&
+        faceResult.landmarks.rightEye &&
+        faceResult.landmarks.noseTip &&
+        faceResult.landmarks.mouthCenter &&
+        faceResult.landmarks.chinTip
+      );
+
+      // 4. Landmark Quality Check
+      const landmarkQualityValid = spec.requiresFaceLandmarks
+        ? isHighQualityDetector &&
+          landmarkQuality.available &&
+          landmarkQuality.requiredLandmarksPresent &&
+          hasRequiredPoints &&
+          landmarkQuality.confidence >= spec.minLandmarkConfidence
+        : true;
+
+      // 5. Pose Quality Check
+      const isPoseAvailable =
+        pose.source !== 'unavailable' &&
+        pose.yawDeg !== null &&
+        pose.pitchDeg !== null &&
+        pose.rollDeg !== null;
+
+      const poseQualityValid =
+        isHighQualityDetector &&
+        isPoseAvailable &&
+        pose.confidence >= spec.minPoseConfidence;
+
+      // 6. Position / Centering Check
       const positionValid =
         Math.abs(deltaX) <= spec.centerToleranceX &&
         Math.abs(deltaY) <= spec.centerToleranceY + 0.05;
@@ -159,14 +192,14 @@ export class OverlayGuidanceEngine {
         }
       }
 
-      // 3. Distance Check
+      // 7. Distance Check
       const distanceValid = faceRatio >= spec.minFaceHeightRatio && faceRatio <= spec.maxFaceHeightRatio;
       let distanceMessage = 'Distance ✓';
       if (!distanceValid) {
         distanceMessage = faceRatio < spec.minFaceHeightRatio ? 'Move closer' : 'Step back';
       }
 
-      // 4. Angle / Pose Check against View Target
+      // 8. Angle / Pose Check against View Target
       let angleValid = true;
       let angleMessage = 'Angle ✓';
 
@@ -185,7 +218,15 @@ export class OverlayGuidanceEngine {
         angleMessage = pitch > spec.targetPitchDeg ? 'Lower chin slightly' : 'Raise chin slightly';
       }
 
-      // 5. Expression Check
+      // Lateral Profile Validation: When input.profileState is provided, enforce its state and capture eligibility
+      if (input.profileState && (view.id === 'RIGHT_PROFILE' || view.id === 'LEFT_PROFILE')) {
+        if (!input.profileState.isCaptureEligible || !input.profileState.isProfileAligned) {
+          angleValid = false;
+          angleMessage = input.profileState.guidanceMessage;
+        }
+      }
+
+      // 9. Expression Check
       let expressionValid = true;
       if (spec.requiresSmile) {
         const minSmile = spec.minSmileScore ?? 0.28;
@@ -199,6 +240,9 @@ export class OverlayGuidanceEngine {
       if (!faceDetectionValid) reasons.push('FACE_NOT_DETECTED');
       if (!landmarkQualityValid) reasons.push('LANDMARKS_UNRELIABLE');
       if (!poseQualityValid) reasons.push('POSE_UNRELIABLE');
+      if (input.profileState && (view.id === 'RIGHT_PROFILE' || view.id === 'LEFT_PROFILE') && input.profileState.state === 'TEMPORARILY_LOST') {
+        reasons.push('TRACKING_LOST');
+      }
       if (!positionValid) reasons.push(deltaX > 0 ? 'MOVE_CAMERA_RIGHT' : 'MOVE_CAMERA_LEFT');
       if (!distanceValid) reasons.push(faceRatio < spec.minFaceHeightRatio ? 'MOVE_CLOSER' : 'STEP_BACK');
       if (!angleValid) reasons.push(angleMessage.toUpperCase().replace(/\s+/g, '_'));
@@ -251,6 +295,8 @@ export class OverlayGuidanceEngine {
       let primaryMessage = 'Adjust Alignment';
       if (allValid) {
         primaryMessage = 'CAPTURE READY — HOLD STILL';
+      } else if (input.profileState && (view.id === 'RIGHT_PROFILE' || view.id === 'LEFT_PROFILE') && !input.profileState.isCaptureEligible) {
+        primaryMessage = input.profileState.guidanceMessage;
       } else if (!temporalStabilityValid && isStable === false && motionScore > 20) {
         primaryMessage = 'Hold steady (device motion detected)';
       } else if (!expressionValid && spec.requiresSmile) {
