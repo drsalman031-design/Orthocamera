@@ -172,572 +172,71 @@ const OrthodonticOverlayCanvasComponent: React.FC<OrthodonticOverlayProps> = ({
       className="absolute inset-0 pointer-events-none select-none overflow-hidden"
     >
       {/* ================================================================= */}
-      {/* 1. Z-20: ORTHODONTIC CLINICAL OVERLAY GUIDELINES (Transparent)    */}
+      {/* 1. Z-20: ORTHODONTIC CLINICAL OVERLAY GUIDELINES (Intraoral Only) */}
       {/* ================================================================= */}
-      <div
-        className="absolute inset-0 pointer-events-none z-20 select-none overflow-hidden"
-        style={{ opacity }}
-      >
-        <svg
-          className="w-full h-full"
-          viewBox={`0 0 ${W} ${H}`}
-          style={{ filter: glowFilter }}
+      {isIntraoral && (
+        <div
+          className="absolute inset-0 pointer-events-none z-20 select-none overflow-hidden"
+          style={{ opacity }}
         >
-          <defs>
-            <linearGradient id="gridGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor={baseColor} stopOpacity="0.04" />
-              <stop offset="100%" stopColor={baseColor} stopOpacity="0.02" />
-            </linearGradient>
-            <radialGradient id="smileGlow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor={baseColor} stopOpacity="0.15" />
-              <stop offset="100%" stopColor={baseColor} stopOpacity="0.0" />
-            </radialGradient>
-          </defs>
+          <svg
+            className="w-full h-full"
+            viewBox={`0 0 ${W} ${H}`}
+            style={{ filter: glowFilter }}
+          >
+            <defs>
+              <linearGradient id="gridGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor={baseColor} stopOpacity="0.04" />
+                <stop offset="100%" stopColor={baseColor} stopOpacity="0.02" />
+              </linearGradient>
+              <radialGradient id="smileGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor={baseColor} stopOpacity="0.15" />
+                <stop offset="100%" stopColor={baseColor} stopOpacity="0.0" />
+              </radialGradient>
+            </defs>
 
-          {/* Unified Clinical Template Space [0..1000] x [0..1600] scaled and centered to viewport */}
-          <g transform={`translate(${tmplTx.toFixed(2)}, ${tmplTy.toFixed(2)}) scale(${tmplScale.toFixed(4)})`}>
+            {/* Unified Clinical Template Space [0..1000] x [0..1600] scaled and centered to viewport */}
+            <g transform={`translate(${tmplTx.toFixed(2)}, ${tmplTy.toFixed(2)}) scale(${tmplScale.toFixed(4)})`}>
 
-        {/* Optional Clinical Measurement Grid (Rule of Thirds & Symmetry) */}
-        {showGrid && (
-          <g stroke={baseColor} strokeWidth="0.75" strokeDasharray="3,6" opacity="0.25">
-            {/* Vertical lines */}
-            <line x1="200" y1="0" x2="200" y2="1600" />
-            <line x1="350" y1="0" x2="350" y2="1600" />
-            <line x1="500" y1="0" x2="500" y2="1600" />
-            <line x1="650" y1="0" x2="650" y2="1600" />
-            <line x1="800" y1="0" x2="800" y2="1600" />
-            {/* Horizontal lines */}
-            <line x1="0" y1="300" x2="1000" y2="300" />
-            <line x1="0" y1="500" x2="1000" y2="500" />
-            <line x1="0" y1="700" x2="1000" y2="700" />
-            <line x1="0" y1="900" x2="1000" y2="900" />
-            <line x1="0" y1="1100" x2="1000" y2="1100" />
-            <line x1="0" y1="1300" x2="1000" y2="1300" />
-          </g>
-        )}
+              {/* Optional Clinical Measurement Grid (Rule of Thirds & Symmetry) */}
+              {showGrid && (
+                <g stroke={baseColor} strokeWidth="0.75" strokeDasharray="3,6" opacity="0.25">
+                  {/* Vertical lines */}
+                  <line x1="200" y1="0" x2="200" y2="1600" />
+                  <line x1="350" y1="0" x2="350" y2="1600" />
+                  <line x1="500" y1="0" x2="500" y2="1600" />
+                  <line x1="650" y1="0" x2="650" y2="1600" />
+                  <line x1="800" y1="0" x2="800" y2="1600" />
+                  {/* Horizontal lines */}
+                  <line x1="0" y1="300" x2="1000" y2="300" />
+                  <line x1="0" y1="500" x2="1000" y2="500" />
+                  <line x1="0" y1="700" x2="1000" y2="700" />
+                  <line x1="0" y1="900" x2="1000" y2="900" />
+                  <line x1="0" y1="1100" x2="1000" y2="1100" />
+                  <line x1="0" y1="1300" x2="1000" y2="1300" />
+                </g>
+              )}
 
-        {/* ========================================================================= */}
-        {/* 1. FRONTAL — REST (Extraoral Facial Symmetry & Lip Repose)               */}
-        {/* ========================================================================= */}
-        {view.id === 'FRONTAL_REST' && (
-          <g>
-            {/* Outer Facial Oval Envelope */}
-            <ellipse
-              cx="500"
-              cy="740"
-              rx="280"
-              ry="380"
-              fill="none"
-              stroke={baseColor}
-              strokeWidth="2.5"
-              strokeDasharray="10,6"
-            />
-
-            {/* Vertical Facial Midline (Trichion - Glabella - Subnasale - Gnathion) */}
-            <line
-              x1="500"
-              y1="340"
-              x2="500"
-              y2="1180"
-              stroke={baseColor}
-              strokeWidth="2"
-              strokeDasharray="6,4"
-            />
-            <LabelPill
-              x={500}
-              y={370}
-              text="FACIAL MIDLINE"
-              align="middle"
-              baseColor={baseColor}
-              showLabels={showLabels}
-            />
-
-            {/* Interpupillary / Eye-Level Horizontal Plane */}
-            <line x1="220" y1="650" x2="780" y2="650" stroke={baseColor} strokeWidth="2" />
-            <circle cx="370" cy="650" r="18" fill="none" stroke={baseColor} strokeWidth="1.5" />
-            <circle cx="630" cy="650" r="18" fill="none" stroke={baseColor} strokeWidth="1.5" />
-            <LabelPill
-              x={780}
-              y={656}
-              text="INTERPUPILLARY PLANE"
-              align="start"
-              baseColor={baseColor}
-              showLabels={showLabels}
-            />
-
-            {/* Subnasale Horizontal Plane (Vertical Thirds) */}
-            <line
-              x1="360"
-              y1="800"
-              x2="640"
-              y2="800"
-              stroke={baseColor}
-              strokeWidth="1.5"
-              strokeDasharray="4,4"
-            />
-            <LabelPill
-              x={645}
-              y={806}
-              text="SUBNASALE"
-              align="start"
-              baseColor={baseColor}
-              showLabels={showLabels}
-            />
-
-            {/* Resting Lip Stomion Reference (Lips in Repose, 2-3mm Incisal Show) */}
-            <path d="M 410 880 Q 500 885 590 880" fill="none" stroke={baseColor} strokeWidth="2.5" />
-            <LabelPill
-              x={500}
-              y={920}
-              text="LIP REPOSE"
-              subtext="2-3mm Incisal Show"
-              align="middle"
-              baseColor={baseColor}
-              showLabels={showLabels}
-            />
-
-            {/* Chin / Soft Tissue Gnathion */}
-            <path d="M 450 1100 Q 500 1130 550 1100" fill="none" stroke={baseColor} strokeWidth="2" />
-          </g>
-        )}
-
-        {/* ========================================================================= */}
-        {/* 2. FRONTAL — SMILE (Smile Arc, Buccal Corridors, Gingival Display)       */}
-        {/* ========================================================================= */}
-        {view.id === 'FRONTAL_SMILE' && (
-          <g>
-            {/* Facial Oval Outline */}
-            <ellipse
-              cx="500"
-              cy="740"
-              rx="280"
-              ry="380"
-              fill="none"
-              stroke={baseColor}
-              strokeWidth="2"
-              strokeDasharray="8,6"
-              opacity="0.8"
-            />
-
-            {/* Vertical Facial Midline */}
-            <line
-              x1="500"
-              y1="340"
-              x2="500"
-              y2="1180"
-              stroke={baseColor}
-              strokeWidth="2"
-              strokeDasharray="5,4"
-            />
-
-            {/* Eye Level Line */}
-            <line x1="240" y1="650" x2="760" y2="650" stroke={baseColor} strokeWidth="1.5" />
-            <circle cx="370" cy="650" r="16" fill="none" stroke={baseColor} strokeWidth="1.5" />
-            <circle cx="630" cy="650" r="16" fill="none" stroke={baseColor} strokeWidth="1.5" />
-
-            {/* Smile Region Guide Box */}
-            <rect
-              x="320"
-              y="820"
-              width="360"
-              height="160"
-              rx="24"
-              fill="url(#smileGlow)"
-              stroke={baseColor}
-              strokeWidth="2"
-              strokeDasharray="6,4"
-            />
-
-            {/* Smile Arc Curve (Incisal curve consonant with lower lip) */}
-            <path d="M 350 880 Q 500 950 650 880" fill="none" stroke={baseColor} strokeWidth="3.5" />
-            {/* Upper Lip Contour */}
-            <path
-              d="M 370 860 Q 450 840 500 852 Q 550 840 630 860"
-              fill="none"
-              stroke={baseColor}
-              strokeWidth="1.8"
-            />
-
-            {/* Bilateral Buccal Corridor Markers */}
-            <line x1="350" y1="855" x2="350" y2="905" stroke={baseColor} strokeWidth="2.5" />
-            <line x1="650" y1="855" x2="650" y2="905" stroke={baseColor} strokeWidth="2.5" />
-
-            <LabelPill
-              x={500}
-              y={1020}
-              text="SMILE ARC & BUCCAL CORRIDORS"
-              subtext="0-2mm Gingival Display"
-              align="middle"
-              baseColor={baseColor}
-              showLabels={showLabels}
-            />
-          </g>
-        )}
-
-        {/* ========================================================================= */}
-        {/* 3. RIGHT PROFILE (Frankfort Plane, True Vertical Line, E-Line, Sagittal) */}
-        {/* ========================================================================= */}
-        {view.id === 'RIGHT_PROFILE' && (
-          <g>
-            {/* Anatomical Soft Tissue Profile Silhouette (Facing Right) */}
-            <path
-              d="M 380 380 
-                 C 440 380, 510 440, 520 520 
-                 C 520 550, 535 600, 580 670 
-                 C 592 688, 600 705, 592 720 
-                 C 578 735, 558 740, 552 765 
-                 C 548 785, 578 810, 572 835 
-                 C 566 850, 552 865, 558 880 
-                 C 568 900, 588 920, 578 950 
-                 C 562 985, 498 1020, 440 1020 
-                 C 380 1020, 360 1110, 360 1180"
-              fill="none"
-              stroke={baseColor}
-              strokeWidth="2.8"
-              strokeDasharray="8,5"
-            />
-
-            {/* 1. Frankfort Horizontal (FH) Plane (Porion/Tragus to Orbitale) */}
-            <line x1="240" y1="670" x2="800" y2="670" stroke={baseColor} strokeWidth="2.5" />
-            <LabelPill
-              x={620}
-              y={655}
-              text="FRANKFORT PLANE (FH)"
-              subtext="Porion — Orbitale (Strict Horizontal)"
-              align="start"
-              baseColor={baseColor}
-              showLabels={showLabels}
-            />
-
-            {/* 2. True Vertical Line (TVL / Plumb line passing through Subnasale) */}
-            <line
-              x1="552"
-              y1="340"
-              x2="552"
-              y2="1220"
-              stroke={baseColor}
-              strokeWidth="2"
-              strokeDasharray="6,4"
-              opacity="0.85"
-            />
-            <LabelPill
-              x={552}
-              y={380}
-              text="TRUE VERTICAL (TVL)"
-              subtext="Natural Head Position (NHP)"
-              align="middle"
-              baseColor={baseColor}
-              showLabels={showLabels}
-            />
-
-            {/* 3. Ricketts E-Line (Pronasale/Nose Tip to Soft Tissue Pogonion/Chin) */}
-            <line
-              x1="592"
-              y1="705"
-              x2="578"
-              y2="950"
-              stroke={baseColor}
-              strokeWidth="2"
-              strokeDasharray="4,4"
-            />
-            {/* Ricketts E-Line */}
-            <LabelPill
-              x={610}
-              y={830}
-              text="E-LINE"
-              subtext="Upper -4mm | Lower -2mm"
-              align="start"
-              baseColor={baseColor}
-              showLabels={showLabels}
-            />
-
-            {/* Tragus / External Auditory Meatus (Porion Landmark) */}
-            <circle cx="340" cy="670" r="18" fill="none" stroke={baseColor} strokeWidth="1.5" />
-            <LabelPill
-              x={250}
-              y={676}
-              text="PORION (TRAGUS)"
-              align="end"
-              baseColor={baseColor}
-              showLabels={showLabels}
-            />
-          </g>
-        )}
-
-        {/* ========================================================================= */}
-        {/* 4. LEFT PROFILE (Frankfort Plane, True Vertical Plumb Line, E-Line)      */}
-        {/* ========================================================================= */}
-        {view.id === 'LEFT_PROFILE' && (
-          <g>
-            {/* Anatomical Left Profile Contour (Facing Left) */}
-            <path
-              d="M 620 380 
-                 C 560 380, 490 440, 480 520 
-                 C 480 550, 465 600, 420 670 
-                 C 408 688, 400 705, 408 720 
-                 C 422 735, 442 740, 448 765 
-                 C 452 785, 422 810, 428 835 
-                 C 434 850, 448 865, 442 880 
-                 C 432 900, 412 920, 422 950 
-                 C 438 985, 502 1020, 560 1020 
-                 C 620 1020, 640 1110, 640 1180"
-              fill="none"
-              stroke={baseColor}
-              strokeWidth="2.8"
-              strokeDasharray="8,5"
-            />
-
-            {/* 1. Frankfort Horizontal Plane */}
-            <line x1="200" y1="670" x2="760" y2="670" stroke={baseColor} strokeWidth="2.5" />
-            <LabelPill
-              x={380}
-              y={655}
-              text="FRANKFORT PLANE (FH)"
-              subtext="Porion — Orbitale (Horizontal)"
-              align="end"
-              baseColor={baseColor}
-              showLabels={showLabels}
-            />
-
-            {/* 2. True Vertical Line (TVL / Plumb Line through Subnasale) */}
-            <line
-              x1="448"
-              y1="340"
-              x2="448"
-              y2="1220"
-              stroke={baseColor}
-              strokeWidth="2"
-              strokeDasharray="6,4"
-              opacity="0.85"
-            />
-            <LabelPill
-              x={448}
-              y={380}
-              text="TRUE VERTICAL (TVL)"
-              subtext="Natural Head Position (NHP)"
-              align="middle"
-              baseColor={baseColor}
-              showLabels={showLabels}
-            />
-
-            {/* 3. Ricketts E-Line (Tip of Nose to Pogonion) */}
-            <line
-              x1="408"
-              y1="705"
-              x2="422"
-              y2="950"
-              stroke={baseColor}
-              strokeWidth="2"
-              strokeDasharray="4,4"
-            />
-            {/* Ricketts E-Line */}
-            <LabelPill
-              x={390}
-              y={830}
-              text="E-LINE"
-              subtext="Upper -4mm | Lower -2mm"
-              align="end"
-              baseColor={baseColor}
-              showLabels={showLabels}
-            />
-
-            {/* Tragus / Porion */}
-            <circle cx="660" cy="670" r="18" fill="none" stroke={baseColor} strokeWidth="1.5" />
-            <LabelPill
-              x={750}
-              y={676}
-              text="PORION (TRAGUS)"
-              align="start"
-              baseColor={baseColor}
-              showLabels={showLabels}
-            />
-          </g>
-        )}
-
-        {/* ========================================================================= */}
-        {/* 5. RIGHT OBLIQUE (Dynamic Malar Contour & Sensor-Linked 45° Leveler)     */}
-        {/* ========================================================================= */}
-        {view.id === 'RIGHT_OBLIQUE' && (
-          <g>
-            {/* Dynamic Malar (Zygomatic) Prominence Contour & Smile Tangency */}
-            <path
-              d="M 440 370 
-                 C 530 370, 610 450, 630 560 
-                 C 640 620, 648 690, 620 760 
-                 C 600 810, 570 890, 520 980 
-                 C 460 1030, 370 1010, 340 930 
-                 C 310 850, 330 640, 350 520 Z"
-              fill="none"
-              stroke={baseColor}
-              strokeWidth="2.2"
-              strokeDasharray="8,6"
-              opacity="0.75"
-            />
-
-            {/* Ipsilateral Malar Apex Highlight Curve */}
-            <path
-              d="M 590 600 Q 625 670 605 740"
-              fill="none"
-              stroke={baseColor}
-              strokeWidth="3.5"
-            />
-            <LabelPill
-              x={635}
-              y={670}
-              text="MALAR PROMINENCE"
-              subtext="Nose Tangent to Cheek"
-              align="start"
-              baseColor={baseColor}
-              showLabels={showLabels}
-            />
-
-            {/* 45° 3/4 Smile Arc */}
-            <path d="M 390 860 Q 490 910 570 840" fill="none" stroke={baseColor} strokeWidth="3" />
-            <LabelPill
-              x={500}
-              y={945}
-              text="45° OBLIQUE SMILE ARC"
-              align="middle"
-              baseColor={baseColor}
-              showLabels={showLabels}
-            />
-
-            {/* Interactive 45° Angle Sensor Gauge */}
-            <g transform="translate(500, 1160)">
-              <rect
-                x="-120"
-                y="-18"
-                width="240"
-                height="36"
-                rx="18"
-                fill="#080c14"
-                fillOpacity={0.92}
-                stroke={isYawAligned ? '#10b981' : '#06b6d4'}
-                strokeWidth={1.5}
-              />
-              <circle
-                cx={-85}
-                cy={0}
-                r={6}
-                fill={isYawAligned ? '#10b981' : '#f59e0b'}
-                className={isYawAligned ? 'animate-pulse' : ''}
-              />
-              <text
-                x={-68}
-                y={5}
-                fill={isYawAligned ? '#10b981' : '#e2e8f0'}
-                fontSize="12"
-                fontWeight="700"
-                fontFamily="JetBrains Mono, monospace"
-              >
-                {isYawAligned ? '45° ANGLE ALIGNED' : `ROTATION: ${(currentYaw || 43).toFixed(1)}° / 45°`}
-              </text>
-            </g>
-          </g>
-        )}
-
-        {/* ========================================================================= */}
-        {/* 6. LEFT OBLIQUE (Dynamic Malar Contour & Sensor-Linked 45° Leveler)      */}
-        {/* ========================================================================= */}
-        {view.id === 'LEFT_OBLIQUE' && (
-          <g>
-            {/* Dynamic Left Malar Head Contour */}
-            <path
-              d="M 560 370 
-                 C 470 370, 390 450, 370 560 
-                 C 360 620, 352 690, 380 760 
-                 C 400 810, 430 890, 480 980 
-                 C 540 1030, 630 1010, 660 930 
-                 C 690 850, 670 640, 650 520 Z"
-              fill="none"
-              stroke={baseColor}
-              strokeWidth="2.2"
-              strokeDasharray="8,6"
-              opacity="0.75"
-            />
-
-            {/* Left Malar Apex Highlight Curve */}
-            <path
-              d="M 410 600 Q 375 670 395 740"
-              fill="none"
-              stroke={baseColor}
-              strokeWidth="3.5"
-            />
-            <LabelPill
-              x={365}
-              y={670}
-              text="LEFT MALAR PROMINENCE"
-              subtext="Nose Tangent to Cheek"
-              align="end"
-              baseColor={baseColor}
-              showLabels={showLabels}
-            />
-
-            {/* 45° 3/4 Left Smile Arc */}
-            <path d="M 610 860 Q 510 910 430 840" fill="none" stroke={baseColor} strokeWidth="3" />
-            <LabelPill
-              x={500}
-              y={945}
-              text="45° OBLIQUE SMILE ARC"
-              align="middle"
-              baseColor={baseColor}
-              showLabels={showLabels}
-            />
-
-            {/* Interactive 45° Angle Sensor Gauge */}
-            <g transform="translate(500, 1160)">
-              <rect
-                x="-120"
-                y="-18"
-                width="240"
-                height="36"
-                rx="18"
-                fill="#080c14"
-                fillOpacity={0.92}
-                stroke={isYawAligned ? '#10b981' : '#06b6d4'}
-                strokeWidth={1.5}
-              />
-              <circle
-                cx={-85}
-                cy={0}
-                r={6}
-                fill={isYawAligned ? '#10b981' : '#f59e0b'}
-                className={isYawAligned ? 'animate-pulse' : ''}
-              />
-              <text
-                x={-68}
-                y={5}
-                fill={isYawAligned ? '#10b981' : '#e2e8f0'}
-                fontSize="12"
-                fontWeight="700"
-                fontFamily="JetBrains Mono, monospace"
-              >
-                {isYawAligned ? '45° ANGLE ALIGNED' : `ROTATION: ${(Math.abs(currentYaw) || 44).toFixed(1)}° / 45°`}
-              </text>
-            </g>
-          </g>
-        )}
-
-        {/* ========================================================================= */}
-        {/* 7. ANTERIOR INTRAORAL (Centric Occlusion, Midline, Zeniths, Retractors)  */}
-        {/* ========================================================================= */}
-        {view.id === 'ANTERIOR_INTRAORAL' && (
-          <g>
-            {/* Bilateral Cheek Retractor Boundaries */}
-            <path
-              d="M 170 540 C 130 680, 130 920, 170 1060"
-              fill="none"
-              stroke={baseColor}
-              strokeWidth="2.5"
-              strokeDasharray="6,6"
-            />
-            <path
-              d="M 830 540 C 870 680, 870 920, 830 1060"
-              fill="none"
-              stroke={baseColor}
-              strokeWidth="2.5"
-              strokeDasharray="6,6"
-            />
+              {/* ========================================================================= */}
+              {/* 7. ANTERIOR INTRAORAL (Centric Occlusion, Midline, Zeniths, Retractors)  */}
+              {/* ========================================================================= */}
+              {view.id === 'ANTERIOR_INTRAORAL' && (
+                <g>
+                  {/* Bilateral Cheek Retractor Boundaries */}
+                  <path
+                    d="M 170 540 C 130 680, 130 920, 170 1060"
+                    fill="none"
+                    stroke={baseColor}
+                    strokeWidth="2.5"
+                    strokeDasharray="6,6"
+                  />
+                  <path
+                    d="M 830 540 C 870 680, 870 920, 830 1060"
+                    fill="none"
+                    stroke={baseColor}
+                    strokeWidth="2.5"
+                    strokeDasharray="6,6"
+                  />
             <LabelPill
               x={140}
               y={520}
@@ -1144,6 +643,7 @@ const OrthodonticOverlayCanvasComponent: React.FC<OrthodonticOverlayProps> = ({
           </g>
         </svg>
       </div>
+    )}
 
       {/* ================================================================= */}
       {/* 2. Z-30: MEDIAPIPE LIVE TRACKING & FACIAL MESH                    */}
@@ -1264,6 +764,39 @@ const OrthodonticOverlayCanvasComponent: React.FC<OrthodonticOverlayProps> = ({
                   r="5"
                   fill={isReady ? '#10b981' : '#f59e0b'}
                 />
+              </g>
+            )}
+
+            {/* Dynamic 45° Angle Alignment Gauge for Oblique Views */}
+            {view.id.includes('OBLIQUE') && (
+              <g transform={`translate(${(0.5 * W).toFixed(1)}, ${(0.22 * H).toFixed(1)})`}>
+                <rect
+                  x="-105"
+                  y="-16"
+                  width="210"
+                  height="32"
+                  rx="16"
+                  fill="#080c14"
+                  fillOpacity={0.88}
+                  stroke={isYawAligned ? '#10b981' : '#06b6d4'}
+                  strokeWidth={1.5}
+                />
+                <circle
+                  cx={-75}
+                  cy={0}
+                  r={5}
+                  fill={isYawAligned ? '#10b981' : '#f59e0b'}
+                />
+                <text
+                  x={-60}
+                  y={4}
+                  fill={isYawAligned ? '#10b981' : '#e2e8f0'}
+                  fontSize="11"
+                  fontWeight="700"
+                  fontFamily="JetBrains Mono, monospace"
+                >
+                  {isYawAligned ? '45° ANGLE ALIGNED ✓' : `ROTATION: ${Math.abs(currentYaw).toFixed(1)}° / 45°`}
+                </text>
               </g>
             )}
 
