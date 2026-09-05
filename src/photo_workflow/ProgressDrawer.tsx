@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { X, Check, ArrowRight, Circle, Camera, Trash2 } from 'lucide-react';
+import { X, Check, ArrowRight, Circle, Camera, Trash2, Image as ImageIcon } from 'lucide-react';
 import { CapturedPhoto, OrthodonticViewDefinition, ViewId } from '../types';
 import { ORTHODONTIC_VIEWS } from './workflowData';
+import { GalleryStorage } from '../storage/galleryStorage';
 
 interface ProgressDrawerProps {
   isOpen: boolean;
@@ -172,6 +173,21 @@ export const ProgressDrawer: React.FC<ProgressDrawerProps> = ({
             <div className="space-y-2">
               {intraoralViews.map((v) => renderViewItem(v, v.index - 1))}
             </div>
+          </div>
+
+          {/* Quick Action: Open Mobile Gallery */}
+          <div className="pt-2 pb-1">
+            <button
+              type="button"
+              onClick={() => {
+                GalleryStorage.openGallery();
+                onClose();
+              }}
+              className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs font-semibold flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg"
+            >
+              <ImageIcon className="w-4 h-4 text-emerald-400" />
+              <span>Open Mobile Gallery (Pictures/Orthocamera)</span>
+            </button>
           </div>
         </div>
       </div>

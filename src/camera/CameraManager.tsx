@@ -556,6 +556,20 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
       // Rapid preliminary clinical quality check from live sensor readings
       const liveGuidance = latestGuidanceRef.current;
       const preliminaryQuality: QualityCheckResult = {
+        overallPassed: true,
+        overallScore: Math.round(liveGuidance?.readyScore ?? 90),
+        position: {
+          passed: liveGuidance?.positionValid ?? true,
+          score: Math.round(liveGuidance?.readyScore ?? 90),
+          label: 'Position',
+          feedback: liveGuidance?.positionMessage || 'Aligned',
+        },
+        orientation: {
+          passed: liveGuidance?.angleValid ?? true,
+          score: Math.round(liveGuidance?.readyScore ?? 90),
+          label: 'Angle',
+          feedback: liveGuidance?.angleMessage || 'Level',
+        },
         sharpness: {
           passed: (liveGuidance?.sharpnessScore ?? 80) >= 18,
           score: Math.min(100, Math.round((liveGuidance?.sharpnessScore ?? 80) * 1.1)),

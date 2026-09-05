@@ -17,6 +17,7 @@ interface CameraControlsProps {
   latestPhotoThumbnail?: string;
   autoCaptureEnabled?: boolean;
   onToggleAutoCapture?: () => void;
+  onOpenGallery?: () => void;
 }
 
 const CameraControlsComponent: React.FC<CameraControlsProps> = ({
@@ -34,6 +35,7 @@ const CameraControlsComponent: React.FC<CameraControlsProps> = ({
   latestPhotoThumbnail,
   autoCaptureEnabled = true,
   onToggleAutoCapture,
+  onOpenGallery,
 }) => {
   const isReady = guidance.isReady;
 
@@ -95,26 +97,33 @@ const CameraControlsComponent: React.FC<CameraControlsProps> = ({
           </span>
         </button>
 
-        {/* Recent Capture Thumbnail Display */}
-        <div
-          className="relative w-12 h-12 rounded-2xl bg-slate-900/90 border border-slate-700/80 backdrop-blur-2xl text-slate-200 overflow-hidden flex items-center justify-center shadow-lg shadow-black/50"
-          title={`${capturedCount} photos captured directly to phone gallery`}
+        {/* Recent Capture Thumbnail Display & Quick Open Gallery */}
+        <button
+          type="button"
+          id="gallery-thumbnail-btn"
+          onClick={onOpenGallery}
+          className="relative w-12 h-12 rounded-2xl bg-slate-900/90 border border-slate-700/80 backdrop-blur-2xl text-slate-200 overflow-hidden flex items-center justify-center shadow-lg shadow-black/50 active:scale-90 hover:border-emerald-400 hover:shadow-[0_0_15px_rgba(16,185,129,0.35)] transition-all cursor-pointer group focus:outline-none focus:ring-2 focus:ring-emerald-400/50"
+          title={latestPhotoThumbnail ? "Open in Mobile Gallery (Pictures/Orthocamera)" : "Mobile Gallery"}
+          aria-label="Open mobile gallery"
         >
           {latestPhotoThumbnail ? (
-            <img
-              src={latestPhotoThumbnail}
-              alt="Latest"
-              className="w-full h-full object-cover"
-            />
+            <>
+              <img
+                src={latestPhotoThumbnail}
+                alt="Latest Captured"
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200 pointer-events-none"
+              />
+              <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors pointer-events-none" />
+            </>
           ) : (
-            <ImageIcon className="w-5 h-5 text-slate-300" />
+            <ImageIcon className="w-5 h-5 text-slate-300 group-hover:text-emerald-300 transition-colors pointer-events-none" />
           )}
           {capturedCount > 0 && (
-            <span className="absolute -top-1 -right-1 bg-emerald-500 text-slate-950 text-[10px] font-mono font-extrabold w-5 h-5 rounded-full flex items-center justify-center shadow-[0_0_8px_rgba(16,185,129,0.6)]">
+            <span className="absolute -top-1 -right-1 bg-emerald-500 text-slate-950 text-[10px] font-mono font-extrabold w-5 h-5 rounded-full flex items-center justify-center shadow-[0_0_8px_rgba(16,185,129,0.6)] pointer-events-none">
               {capturedCount}
             </span>
           )}
-        </div>
+        </button>
 
         {/* Shutter Button Container */}
         <div className="relative flex items-center justify-center">

@@ -87,6 +87,9 @@ export class GalleryStorage {
         });
 
         if (nativeRes && nativeRes.success) {
+          if (nativeRes.uri) {
+            this.lastSavedUri = nativeRes.uri;
+          }
           return {
             success: true,
             filename: nativeRes.filename || filename,
@@ -201,5 +204,33 @@ export class GalleryStorage {
     }
 
     return { savedCount, results };
+  }
+
+  private static lastSavedUri: string | null = null;
+
+  /**
+   * Retrieves the last saved native media content URI
+   */
+  public static getLastSavedUri(): string | null {
+    return this.lastSavedUri;
+  }
+
+  /**
+   * Opens the device's native Gallery or Photos app.
+   * If a specific photo URI is provided or was recently saved, opens that photo directly in the gallery viewer.
+   */
+  public static async openGallery(uri?: string): Promise<{ success: boolean; error?: string }> {
+    const targetUri = uri || this.lastSavedUri || undefined;
+    if (this.isNativeAndroid()) {
+      try {
+        const res = await GallerySave.openGallery({ uri: targetUri });
+        return { success: res?.success ?? true };
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        console.error('[GalleryStorage] Failed to launch native gallery:', err);
+        return { success: false, error: errorMsg };
+      }
+    }
+    return { success: false, error: 'Not running on native Android device' };
   }
 }

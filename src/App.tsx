@@ -15,6 +15,7 @@ import { WorkflowHeader } from './photo_workflow/WorkflowHeader';
 import { CameraControls } from './photo_workflow/CameraControls';
 import { QuickReviewOverlay } from './photo_workflow/QuickReviewOverlay';
 import { ProgressDrawer } from './photo_workflow/ProgressDrawer';
+import { PhotoLightboxModal } from './photo_workflow/PhotoLightboxModal';
 import { PatientInfoModal } from './case_management/PatientInfoModal';
 import { SettingsModal } from './settings/SettingsModal';
 import { AndroidGuideModal } from './components/AndroidGuideModal';
@@ -95,8 +96,12 @@ export default function App() {
   // Modals & Drawers
   const [isStepDrawerOpen, setIsStepDrawerOpen] = useState<boolean>(false);
   const [isPatientModalOpen, setIsPatientModalOpen] = useState<boolean>(false);
-    const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isAndroidDocsOpen, setIsAndroidDocsOpen] = useState<boolean>(false);
+  const [photoForLightbox, setPhotoForLightbox] = useState<CapturedPhoto | null>(null);
+
+  // Track last saved native gallery URI
+  const [latestGalleryUri, setLatestGalleryUri] = useState<string | null>(null);
 
   // Toast notification for phone gallery saving
   const [galleryToast, setGalleryToast] = useState<{ message: string; filename: string; fileUrl?: string } | null>(null);
@@ -266,6 +271,9 @@ export default function App() {
         suffix: burstSuffix,
       }).then((saveRes) => {
         CapturePerformanceTracker.recordGallerySaveCompleted();
+        if (saveRes.uri) {
+          setLatestGalleryUri(saveRes.uri);
+        }
         if (saveRes.success && saveRes.method === 'gallery') {
           setGalleryToast({
             message: isBurst
@@ -336,6 +344,38 @@ export default function App() {
     }
   };
 
+  const photoList = Object.values(activeCase.photos).filter(
+    (p): p is CapturedPhoto => Boolean(p)
+  );
+  const latestPhoto = photoList.sort((a, b) => b.timestamp - a.timestamp)[0];
+
+  // Open phone's native gallery (Google Photos / Samsung Gallery) or in-app preview
+  const handleOpenGallery = useCallback(async () => {
+    if (GalleryStorage.isNativeAndroid()) {
+      setGalleryToast({
+        message: 'Opening Mobile Gallery',
+        filename: 'Pictures/Orthocamera',
+      });
+      setTimeout(() => setGalleryToast(null), 2500);
+
+      const res = await GalleryStorage.openGallery(latestGalleryUri || undefined);
+      if (!res.success && res.error) {
+        setGalleryToast({
+          message: 'Gallery Notice',
+          filename: res.error,
+        });
+        setTimeout(() => setGalleryToast(null), 3000);
+      }
+    } else {
+      // In web browser: open the photo in high-res lightbox or open step drawer
+      if (latestPhoto) {
+        setPhotoForLightbox(latestPhoto);
+      } else {
+        setIsStepDrawerOpen(true);
+      }
+    }
+  }, [latestGalleryUri, latestPhoto]);
+
   // Delete a captured photo from the active clinical case
   const handleDeletePhoto = (viewId: ViewId) => {
     const viewDef = ORTHODONTIC_VIEWS.find((v) => v.id === viewId);
@@ -400,11 +440,6 @@ export default function App() {
     currentViewIndex < ORTHODONTIC_VIEWS.length - 1
       ? ORTHODONTIC_VIEWS[currentViewIndex + 1]
       : undefined;
-
-  const photoList = Object.values(activeCase.photos).filter(
-    (p): p is CapturedPhoto => Boolean(p)
-  );
-  const latestPhoto = photoList.sort((a, b) => b.timestamp - a.timestamp)[0];
 
   // Longitudinal Ghost Reference Image
   const existingViewPhoto = activeCase.photos[currentView.id]?.dataUrl || null;
@@ -517,6 +552,7 @@ export default function App() {
               autoCaptureEnabled: !prev.autoCaptureEnabled,
             }))
           }
+          onOpenGallery={handleOpenGallery}
         />
       </CameraManager>
 
@@ -639,6 +675,16 @@ export default function App() {
         isOpen={isAndroidDocsOpen}
         onClose={() => setIsAndroidDocsOpen(false)}
       />
+
+      {/* High-Resolution Captured Photo Lightbox Modal */}
+      {photoForLightbox && (
+        <PhotoLightboxModal
+          photo={photoForLightbox}
+          onClose={() => setPhotoForLightbox(null)}
+          onOpenMobileGallery={handleOpenGallery}
+          patientName={activeCase.patientName || activeCase.patientId}
+        />
+      )}
 
       {/* Professional Clinical Launch Splash */}
       {isInitializing && (

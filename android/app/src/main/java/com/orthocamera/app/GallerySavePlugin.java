@@ -3,6 +3,7 @@ package com.orthocamera.app;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -26,6 +27,8 @@ import java.io.OutputStream;
  */
 @CapacitorPlugin(name = "GallerySave")
 public class GallerySavePlugin extends Plugin {
+
+    private static String lastSavedUriString = null;
 
     @PluginMethod
     public void savePhotoToGallery(PluginCall call) {
@@ -115,6 +118,10 @@ public class GallerySavePlugin extends Plugin {
                 imageUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
             }
 
+            if (imageUri != null) {
+                lastSavedUriString = imageUri.toString();
+            }
+
             JSObject ret = new JSObject();
             ret.put("success", true);
             ret.put("uri", imageUri != null ? imageUri.toString() : "");
@@ -132,5 +139,85 @@ public class GallerySavePlugin extends Plugin {
             }
             call.reject("Failed to save image to Android MediaStore: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * openGallery
+     *
+     * Launches the Android device's native Gallery or Photos app (Google Photos, Samsung Gallery, etc.)
+     * directly focused on the saved orthodontic photo or the Pictures/Orthocamera album.
+     */
+    @PluginMethod
+    public void openGallery(PluginCall call) {
+        Context context = getContext();
+        if (context == null) {
+            call.reject("Android Context is unavailable");
+            return;
+        }
+
+        String uriString = call.getString("uri");
+        if ((uriString == null || uriString.trim().isEmpty()) && lastSavedUriString != null) {
+            uriString = lastSavedUriString;
+        }
+
+        boolean opened = false;
+
+        // 1. Try viewing the specific photo if a content URI is available
+        if (uriString != null && !uriString.trim().isEmpty()) {
+            try {
+                Uri photoUri = Uri.parse(uriString);
+                Intent viewIntent = new Intent(Intent.ACTION_VIEW);
+                viewIntent.setDataAndType(photoUri, "image/*");
+                viewIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                viewIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(viewIntent);
+                opened = true;
+            } catch (Exception ignored) {
+            }
+        }
+
+        // 2. Fallback: Open system MediaStore external images collection in Gallery
+        if (!opened) {
+            try {
+                Intent galleryIntent = new Intent(Intent.ACTION_VIEW);
+                galleryIntent.setDataAndType(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*");
+                galleryIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(galleryIntent);
+                opened = true;
+            } catch (Exception ignored) {
+            }
+        }
+
+        // 3. Fallback: Standard CATEGORY_APP_GALLERY
+        if (!opened) {
+            try {
+                Intent appGalleryIntent = new Intent(Intent.ACTION_MAIN);
+                appGalleryIntent.addCategory(Intent.CATEGORY_APP_GALLERY);
+                appGalleryIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(appGalleryIntent);
+                opened = true;
+            } catch (Exception ignored) {
+            }
+        }
+
+        // 4. Fallback: Intent chooser with image/*
+        if (!opened) {
+            try {
+                Intent chooserIntent = new Intent(Intent.ACTION_VIEW);
+                chooserIntent.setType("image/*");
+                chooserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                Intent chooser = Intent.createChooser(chooserIntent, "Open Gallery");
+                chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(chooser);
+                opened = true;
+            } catch (Exception e) {
+                call.reject("Could not open gallery: " + e.getMessage(), e);
+                return;
+            }
+        }
+
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        call.resolve(ret);
     }
 }
