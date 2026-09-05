@@ -53,6 +53,10 @@ export class HysteresisController {
     this.config.stabilityConfirmationMs = Math.max(150, Math.min(500, ms));
   }
 
+  public setStabilityConfirmationDuration(ms: number): void {
+    this.setStabilityDurationMs(ms);
+  }
+
   public setCountdownDuration(seconds: number): void {
     // Adapter for legacy settings call
     this.config.stabilityConfirmationMs = Math.max(180, Math.min(450, Math.round(seconds * 350)));
