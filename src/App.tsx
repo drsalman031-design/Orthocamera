@@ -102,8 +102,8 @@ export default function App() {
   const [galleryToast, setGalleryToast] = useState<{ message: string; filename: string; fileUrl?: string } | null>(null);
 
   // Launch & Initialization Splash
-  const [isInitializing, setIsInitializing] = useState<boolean>(true);
-  const [initStage, setInitStage] = useState<string>('Initializing camera...');
+  const [isInitializing, setIsInitializing] = useState<boolean>(false);
+  const [initStage, setInitStage] = useState<string>('Ready');
 
   // Auto-Capture Countdown State & Hysteresis
   const [autoCaptureCountdown, setAutoCaptureCountdown] = useState<number | null>(null);
@@ -124,31 +124,13 @@ export default function App() {
     isHardwareZoom: false,
   });
 
-  // Load persistent IndexedDB on startup with clean professional splash
+  // Load persistent storage in background without blocking UI
   useEffect(() => {
-    const t1 = setTimeout(() => {
-      setInitStage('Loading AI alignment engine...');
-    }, 350);
-
-    const t2 = setTimeout(() => {
-      setInitStage('Ready');
-    }, 750);
-
-    const t3 = setTimeout(() => {
-      setIsInitializing(false);
-    }, 1000);
-
     CaseStorage.init().then(() => {
       CaseStorage.loadLatestCase().then((saved) => {
         if (saved) setActiveCase(saved);
       });
     });
-
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-    };
   }, []);
 
   // Update Hysteresis Controller delay when setting changes

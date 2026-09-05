@@ -115,6 +115,24 @@ function mirrorFaceResult(result: FaceAnalysisResult): FaceAnalysisResult {
           lowerLip: result.landmarks.lowerLip
             ? { x: 1.0 - result.landmarks.lowerLip.x, y: result.landmarks.lowerLip.y }
             : undefined,
+          subnasale: result.landmarks.subnasale
+            ? { x: 1.0 - result.landmarks.subnasale.x, y: result.landmarks.subnasale.y }
+            : undefined,
+          menton: result.landmarks.menton
+            ? { x: 1.0 - result.landmarks.menton.x, y: result.landmarks.menton.y }
+            : undefined,
+          leftTragus: result.landmarks.rightTragus
+            ? { x: 1.0 - result.landmarks.rightTragus.x, y: result.landmarks.rightTragus.y }
+            : undefined,
+          rightTragus: result.landmarks.leftTragus
+            ? { x: 1.0 - result.landmarks.leftTragus.x, y: result.landmarks.leftTragus.y }
+            : undefined,
+          leftGonion: result.landmarks.rightGonion
+            ? { x: 1.0 - result.landmarks.rightGonion.x, y: result.landmarks.rightGonion.y }
+            : undefined,
+          rightGonion: result.landmarks.leftGonion
+            ? { x: 1.0 - result.landmarks.leftGonion.x, y: result.landmarks.leftGonion.y }
+            : undefined,
         }
       : undefined,
   };
@@ -229,129 +247,42 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
           /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent));
 
       const constraintTiers: MediaStreamConstraints[] = [];
+      const targetDeviceId = specificDeviceId !== undefined ? specificDeviceId : selectedDeviceId;
 
-      if (isMobile) {
-        // MOBILE ULTRA-FAST PATH (< 2 sec launch):
-        // Immediately query the native camera sensor without blocking on device enumeration
-        // Defaults to 'environment' (rear camera) for clinical dental photography
-        constraintTiers.push(
-          {
-            video: {
-              facingMode: { ideal: targetFacing },
-              width: { ideal: 1920 },
-              height: { ideal: 1080 },
-            },
-            audio: false,
+      // Tier 1: Optimal resolution (1080p ideal) + preferred facing mode
+      if (targetDeviceId) {
+        constraintTiers.push({
+          video: {
+            deviceId: { ideal: targetDeviceId },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
           },
-          {
-            video: {
-              facingMode: { ideal: targetFacing },
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-            },
-            audio: false,
-          },
-          {
-            video: {
-              facingMode: { ideal: targetFacing },
-            },
-            audio: false,
-          },
-          {
-            video: {
-              facingMode: { ideal: targetFacing === 'environment' ? 'user' : 'environment' },
-            },
-            audio: false,
-          },
-          {
-            video: true,
-            audio: false,
-          }
-        );
+          audio: false,
+        });
       } else {
-        // DESKTOP PATH:
-        // Enumerate available camera devices early to identify DroidCam or virtual webcam
-        let videoDevices: MediaDeviceInfo[] = [];
-        try {
-          const allDevices = await navigator.mediaDevices.enumerateDevices();
-          videoDevices = allDevices.filter((d) => d.kind === 'videoinput');
-          if (videoDevices.length > 0) {
-            setAvailableCameras(videoDevices);
-          }
-        } catch (enumErr) {
-          console.debug('Error enumerating devices:', enumErr);
-        }
-
-        // Automatically search for DroidCam video source
-        const droidCamDevice = videoDevices.find((d) =>
-          /droid|phone|source\s*2/i.test(d.label)
-        );
-
-        const targetDeviceId =
-          specificDeviceId !== undefined
-            ? specificDeviceId
-            : (selectedDeviceId || (droidCamDevice ? droidCamDevice.deviceId : null));
-
-        // 1. If DroidCam or a specific camera was targeted, prioritize it with 1080p
-        if (targetDeviceId) {
-          constraintTiers.push(
-            {
-              video: {
-                deviceId: { exact: targetDeviceId },
-                width: { ideal: 1920 },
-                height: { ideal: 1080 },
-              },
-              audio: false,
-            },
-            {
-              video: {
-                deviceId: { exact: targetDeviceId },
-              },
-              audio: false,
-            }
-          );
-        }
-
-        // 2. High-resolution preferred with requested facing mode
-        constraintTiers.push(
-          {
-            video: {
-              facingMode: { ideal: targetFacing },
-              width: { ideal: 1920 },
-              height: { ideal: 1080 },
-            },
-            audio: false,
+        constraintTiers.push({
+          video: {
+            facingMode: { ideal: targetFacing },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
           },
-          // 3. Standard 720p with requested facing mode
-          {
-            video: {
-              facingMode: { ideal: targetFacing },
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-            },
-            audio: false,
-          },
-          // 4. Any resolution with requested facing mode
-          {
-            video: {
-              facingMode: { ideal: targetFacing },
-            },
-            audio: false,
-          },
-          // 5. Alternate facing mode (crucial for desktop/laptop webcams lacking 'environment' rear camera)
-          {
-            video: {
-              facingMode: { ideal: targetFacing === 'environment' ? 'user' : 'environment' },
-            },
-            audio: false,
-          },
-          // 6. Bare minimum video constraint: ANY available camera
-          {
-            video: true,
-            audio: false,
-          }
-        );
+          audio: false,
+        });
       }
+
+      // Tier 2: Flexible fallback (any resolution, flexible facing)
+      constraintTiers.push({
+        video: {
+          facingMode: { ideal: targetFacing },
+        },
+        audio: false,
+      });
+
+      // Tier 3: Universal fallback (any available camera sensor)
+      constraintTiers.push({
+        video: true,
+        audio: false,
+      });
 
       let acquiredStream: MediaStream | null = null;
       let lastErr: unknown = null;
