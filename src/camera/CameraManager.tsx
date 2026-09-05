@@ -19,6 +19,8 @@ export interface CameraTelemetry {
   sensorResolution: { width: number; height: number };
   zoomLevel: number;
   isHardwareZoom: boolean;
+  currentState?: string;
+  candidateToCaptureLatencyMs?: number;
 }
 
 interface CameraManagerProps {
@@ -33,6 +35,8 @@ interface CameraManagerProps {
   onFacingModeChange?: (facing: 'environment' | 'user') => void;
   zoomLevel: number;
   onZoomChange: (zoom: number) => void;
+  burstModeEnabled?: boolean;
+  burstCount?: number;
   onTelemetryUpdate?: (telemetry: CameraTelemetry) => void;
   onSwipeNext?: () => void;
   onSwipePrevious?: () => void;
@@ -150,6 +154,8 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
   onFacingModeChange,
   zoomLevel,
   onZoomChange,
+  burstModeEnabled = false,
+  burstCount = 3,
   onTelemetryUpdate,
   onSwipeNext,
   onSwipePrevious,
@@ -519,6 +525,7 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
   const latestGuidanceRef = useRef<LiveGuidanceState | null>(null);
 
   const isBurstCapturingRef = useRef<boolean>(false);
+  const isInferenceRunningRef = useRef<boolean>(false);
 
   // Capture Single Frame from Live Video Buffer with Sub-15ms Latency
   const captureSingleFrame = useCallback(
@@ -583,10 +590,10 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
           feedback: 'Clinical exposure verified',
         },
         framing: {
-          passed: liveGuidance?.positionValid ?? true,
+          passed: liveGuidance?.frameSizeValid ?? liveGuidance?.positionValid ?? true,
           score: liveGuidance?.readyScore ?? 90,
-          label: 'Framing',
-          feedback: 'Position verified',
+          label: 'Frame Size',
+          feedback: liveGuidance?.frameSizeMessage || 'Frame size verified',
         },
         reasons: [],
         recommendation: 'ACCEPT',
@@ -607,7 +614,7 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
       // Shutter response is instant - immediately dispatch photo
       onPhotoCaptured(newPhoto);
 
-      // Perform deeper pixel-level image quality analysis asynchronously in background
+      // Perform deeper pixel-level image quality analysis asynchronously in background without delaying camera
       setTimeout(async () => {
         try {
           const deepQuality = await ImageQualityAnalyzer.analyzeImage(
@@ -623,14 +630,14 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
         } finally {
           CapturePerformanceTracker.recordProcessingCompleted();
         }
-      }, 0);
+      }, 50);
 
       return newPhoto;
     },
     [currentView, facingMode, isHardwareZoom, onPhotoCaptured, zoomLevel]
   );
 
-  // Rapid Multi-Shot Burst Capture Engine (Captures 3 photos swiftly for each position)
+  // Rapid Multi-Shot Burst Capture Engine (optional in Settings)
   const captureBurst = useCallback(
     async (count: number = 3, intervalMs: number = 130) => {
       if (isBurstCapturingRef.current) return;
@@ -652,13 +659,17 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
     [captureSingleFrame]
   );
 
-  // Handle auto-capture trigger from parent (fires rapid 3-shot burst)
+  // Handle auto-capture trigger: single photo by default, burst only if enabled in Settings
   useEffect(() => {
     if (autoCaptureTrigger) {
-      captureBurst(3, 130);
+      if (burstModeEnabled) {
+        captureBurst(burstCount, 130);
+      } else {
+        captureSingleFrame(1, 1);
+      }
       onAutoCaptureReset();
     }
-  }, [autoCaptureTrigger, captureBurst, onAutoCaptureReset]);
+  }, [autoCaptureTrigger, burstModeEnabled, burstCount, captureBurst, captureSingleFrame, onAutoCaptureReset]);
 
   // Sync props to refs to prevent effect recreation on re-renders
   const onGuidanceUpdateRef = useRef(onGuidanceUpdate);
@@ -692,7 +703,7 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
   const lastGuidanceDispatchTimeRef = useRef<number>(0);
   const lastTelemetryDispatchTimeRef = useRef<number>(0);
 
-  // Continuous Real-Time Vision & Motion Analysis Loop (Stabilized 12 FPS)
+  // Continuous Real-Time Vision & Motion Analysis Loop with Adaptive Cadence & Single Active Inference Lock
   useEffect(() => {
     if (!cameraActive) return;
 
@@ -716,10 +727,28 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
         lastFpsCalcTimeRef.current = timestamp;
       }
 
-      // Thermal-safe AI analysis cadence (~9-10 FPS / 105ms)
-      // Provides ~90ms idle GPU/CPU cooldown between inferences, preventing phone overheating and battery drain
-      // while maintaining fluid, real-time clinical alignment and instant auto-capture.
-      if (timestamp - lastAnalysisTime >= 105) {
+      // Adaptive Cadence Scheduler:
+      // SEARCHING: ~4 FPS (250ms) -> Maximizes GPU/CPU cooldown when subject is not in frame
+      // ALIGNING: ~6 FPS (166ms) -> Smooth, responsive guidance with low thermal load
+      // READY_CANDIDATE: ~8 FPS (125ms) -> Tighter tracking as alignment enters target zone
+      // STABILITY_CONFIRMATION: ~10 FPS (100ms) -> High-frequency verification during 220ms confirmation window
+      const stage = latestGuidanceRef.current?.guidanceStage || 'SEARCHING';
+      const cadenceIntervalMs =
+        stage === 'SEARCHING'
+          ? 250
+          : stage === 'ALIGNING'
+          ? 166
+          : stage === 'READY_CANDIDATE'
+          ? 125
+          : 100;
+
+      if (timestamp - lastAnalysisTime >= cadenceIntervalMs) {
+        // Enforce single active inference execution lock - zero queuing, skip frame if previous inference is still active
+        if (isInferenceRunningRef.current) {
+          requestAnimationFrame(runAnalysisLoop);
+          return;
+        }
+
         lastAnalysisTime = timestamp;
         aiFrameCountRef.current++;
 
@@ -733,116 +762,122 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
         const isFeedActive = video && video.readyState >= 2 && video.videoWidth > 0;
 
         if (isFeedActive && video) {
-          // Optimized 256xAspect buffer: 56x fewer pixels than 1080p, perfectly matching MediaPipe's tensor input
-          const sampleW = 256;
-          const sampleH = video.videoHeight > 0
-            ? Math.round(256 * (video.videoHeight / video.videoWidth))
-            : 144;
+          isInferenceRunningRef.current = true;
+          try {
+            // Optimized 256xAspect buffer: 56x fewer pixels than 1080p, perfectly matching MediaPipe's tensor input
+            const sampleW = 256;
+            const sampleH = video.videoHeight > 0
+              ? Math.round(256 * (video.videoHeight / video.videoWidth))
+              : 144;
 
-          if (!sampleCanvasRef.current || sampleCanvasRef.current.width !== sampleW || sampleCanvasRef.current.height !== sampleH) {
-            sampleCanvasRef.current = document.createElement('canvas');
-            sampleCanvasRef.current.width = sampleW;
-            sampleCanvasRef.current.height = sampleH;
-          }
-          const sampleCanvas = sampleCanvasRef.current;
-          const ctx = sampleCanvas.getContext('2d', { willReadFrequently: true });
-
-          if (ctx) {
-            const inferenceStart = performance.now();
-            ctx.drawImage(video, 0, 0, sampleW, sampleH);
-
-            // Single fast pass for optical motion, luminance and edge sharpness
-            const motionRes = motionEngineRef.current.evaluateFrameMotion(ctx, sampleW, sampleH);
-            motionScoreRef.current = motionRes.motionScore;
-
-            const activeView = currentViewRef.current;
-            let faceRes: FaceAnalysisResult | null = null;
-            let intraRes: IntraoralAnalysisResult | null = null;
-            let profileState: ProfileStateResult | null = null;
-
-            if (activeView.category === 'extraoral') {
-              faceRes = faceAnalyzerRef.current.analyzeFrame(sampleCanvas, ctx, sampleW, sampleH, video);
-
-              // If user/front camera is active (mirrored display), mirror face analysis results
-              // so that yaw, roll, centering, and mesh contours perfectly match the user's on-screen mirror view
-              if (faceRes && facingModeRef.current === 'user') {
-                faceRes = mirrorFaceResult(faceRes);
-              }
-
-              // Synchronize coordinates: Transform face landmarks & contours to viewport normalized coordinates [0..1]
-              // strictly using CameraFrameTransform as single source of truth for object-cover crop & zoom
-              if (faceRes && video.videoWidth > 0 && video.videoHeight > 0) {
-                const vpW = containerRef.current?.clientWidth || window.innerWidth;
-                const vpH = containerRef.current?.clientHeight || window.innerHeight;
-                const visibleCrop = CameraFrameTransform.calculateVisibleCrop(
-                  video.videoWidth,
-                  video.videoHeight,
-                  vpW,
-                  vpH,
-                  zoomLevelRef.current,
-                  isHardwareZoomRef.current
-                );
-                faceRes = CameraFrameTransform.transformFaceResultToViewport(
-                  faceRes,
-                  visibleCrop,
-                  video.videoWidth,
-                  video.videoHeight
-                );
-              }
-
-              // Lateral Profile Evaluation (state machine tracks 90° lateral pose and capture eligibility)
-              if (activeView.id === 'RIGHT_PROFILE' || activeView.id === 'LEFT_PROFILE') {
-                const isRight = activeView.id === 'RIGHT_PROFILE';
-                profileState = profileFallbackRef.current.evaluateProfile(isRight, faceRes);
-              }
-            } else {
-              intraRes = intraoralAnalyzerRef.current.analyzeIntraoralFrame(
-                sampleCanvas,
-                ctx,
-                sampleW,
-                sampleH,
-                activeView.overlayType as 'anterior' | 'right_buccal' | 'left_buccal' | 'maxillary_occlusal' | 'mandibular_occlusal',
-                video
-              );
+            if (!sampleCanvasRef.current || sampleCanvasRef.current.width !== sampleW || sampleCanvasRef.current.height !== sampleH) {
+              sampleCanvasRef.current = document.createElement('canvas');
+              sampleCanvasRef.current.width = sampleW;
+              sampleCanvasRef.current.height = sampleH;
             }
+            const sampleCanvas = sampleCanvasRef.current;
+            const ctx = sampleCanvas.getContext('2d', { willReadFrequently: true });
 
-            lastInferenceLatencyRef.current = Math.round(performance.now() - inferenceStart);
+            if (ctx) {
+              const inferenceStart = performance.now();
+              ctx.drawImage(video, 0, 0, sampleW, sampleH);
 
-            const guidance = OverlayGuidanceEngine.evaluate({
-              view: activeView,
-              faceResult: faceRes,
-              intraoralResult: intraRes,
-              profileState,
-              rawLuminance: motionRes.measuredLuminance,
-              rawSharpness: motionRes.measuredSharpness,
-              motionScore: motionRes.motionScore,
-              isStable: motionRes.isStable,
-              sensitivity: guidanceSensitivityRef.current,
-            });
+              // Single fast pass for optical motion, luminance and edge sharpness
+              const motionRes = motionEngineRef.current.evaluateFrameMotion(ctx, sampleW, sampleH);
+              motionScoreRef.current = motionRes.motionScore;
 
-            latestGuidanceRef.current = guidance;
+              const activeView = currentViewRef.current;
+              let faceRes: FaceAnalysisResult | null = null;
+              let intraRes: IntraoralAnalysisResult | null = null;
+              let profileState: ProfileStateResult | null = null;
 
-            // Dispatch guidance to React state throttled to 105ms to prevent UI main-thread re-render storms
-            if (timestamp - lastGuidanceDispatchTimeRef.current >= 105) {
-              lastGuidanceDispatchTimeRef.current = timestamp;
+              if (activeView.category === 'extraoral') {
+                faceRes = faceAnalyzerRef.current.analyzeFrame(sampleCanvas, ctx, sampleW, sampleH, video);
+
+                // If user/front camera is active (mirrored display), mirror face analysis results
+                if (faceRes && facingModeRef.current === 'user') {
+                  faceRes = mirrorFaceResult(faceRes);
+                }
+
+                // Synchronize coordinates: Transform face landmarks & contours to viewport normalized coordinates [0..1]
+                if (faceRes && video.videoWidth > 0 && video.videoHeight > 0) {
+                  const vpW = containerRef.current?.clientWidth || window.innerWidth;
+                  const vpH = containerRef.current?.clientHeight || window.innerHeight;
+                  const visibleCrop = CameraFrameTransform.calculateVisibleCrop(
+                    video.videoWidth,
+                    video.videoHeight,
+                    vpW,
+                    vpH,
+                    zoomLevelRef.current,
+                    isHardwareZoomRef.current
+                  );
+                  faceRes = CameraFrameTransform.transformFaceResultToViewport(
+                    faceRes,
+                    visibleCrop,
+                    video.videoWidth,
+                    video.videoHeight
+                  );
+                }
+
+                // Lateral Profile Evaluation (state machine tracks 90° lateral pose and capture eligibility)
+                if (activeView.id === 'RIGHT_PROFILE' || activeView.id === 'LEFT_PROFILE') {
+                  const isRight = activeView.id === 'RIGHT_PROFILE';
+                  profileState = profileFallbackRef.current.evaluateProfile(isRight, faceRes);
+                }
+              } else {
+                intraRes = intraoralAnalyzerRef.current.analyzeIntraoralFrame(
+                  sampleCanvas,
+                  ctx,
+                  sampleW,
+                  sampleH,
+                  activeView.overlayType as 'anterior' | 'right_buccal' | 'left_buccal' | 'maxillary_occlusal' | 'mandibular_occlusal',
+                  video
+                );
+              }
+
+              lastInferenceLatencyRef.current = Math.round(performance.now() - inferenceStart);
+
+              const guidance = OverlayGuidanceEngine.evaluate({
+                view: activeView,
+                faceResult: faceRes,
+                intraoralResult: intraRes,
+                profileState,
+                rawLuminance: motionRes.measuredLuminance,
+                rawSharpness: motionRes.measuredSharpness,
+                motionScore: motionRes.motionScore,
+                isStable: motionRes.isStable,
+                sensitivity: guidanceSensitivityRef.current,
+              });
+
+              // Preserve current guidanceStage from previous state machine step if available
+              if (latestGuidanceRef.current?.guidanceStage) {
+                guidance.guidanceStage = latestGuidanceRef.current.guidanceStage;
+              }
+
+              latestGuidanceRef.current = guidance;
+
+              // Dispatch guidance to React state
               onGuidanceUpdateRef.current(guidance);
-            }
 
-            // Report telemetry once every second to prevent unneeded re-render floods
-            if (timestamp - lastTelemetryDispatchTimeRef.current >= 1000) {
-              lastTelemetryDispatchTimeRef.current = timestamp;
-              if (onTelemetryUpdateRef.current) {
-                onTelemetryUpdateRef.current({
-                  cameraFps: cameraFpsRef.current,
-                  aiFps: aiFpsRef.current,
-                  inferenceLatencyMs: lastInferenceLatencyRef.current,
-                  motionScore: motionScoreRef.current,
-                  sensorResolution: sensorResolutionRef.current,
-                  zoomLevel: zoomLevelRef.current,
-                  isHardwareZoom: isHardwareZoomRef.current,
-                });
+              // Report telemetry once every second
+              if (timestamp - lastTelemetryDispatchTimeRef.current >= 1000) {
+                lastTelemetryDispatchTimeRef.current = timestamp;
+                if (onTelemetryUpdateRef.current) {
+                  onTelemetryUpdateRef.current({
+                    cameraFps: cameraFpsRef.current,
+                    aiFps: aiFpsRef.current,
+                    inferenceLatencyMs: lastInferenceLatencyRef.current,
+                    motionScore: motionScoreRef.current,
+                    sensorResolution: sensorResolutionRef.current,
+                    zoomLevel: zoomLevelRef.current,
+                    isHardwareZoom: isHardwareZoomRef.current,
+                    currentState: latestGuidanceRef.current?.guidanceStage || 'SEARCHING',
+                  });
+                }
               }
             }
+          } finally {
+            isInferenceRunningRef.current = false;
           }
         }
       }

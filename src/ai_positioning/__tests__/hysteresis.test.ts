@@ -2,13 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { HysteresisController } from '../HysteresisController';
 import { CaptureReadiness } from '../../types';
 
-describe('HysteresisController - Stability & Persistence', () => {
+describe('HysteresisController - Low Latency Clinical State Machine', () => {
   const readySpec: CaptureReadiness = {
     ready: true,
     score: 95,
     positionValid: true,
     angleValid: true,
     distanceValid: true,
+    frameSizeValid: true,
     expressionValid: true,
     sharpnessValid: true,
     exposureValid: true,
@@ -26,6 +27,7 @@ describe('HysteresisController - Stability & Persistence', () => {
     positionValid: false,
     angleValid: false,
     distanceValid: true,
+    frameSizeValid: true,
     expressionValid: true,
     sharpnessValid: true,
     exposureValid: true,
@@ -37,63 +39,61 @@ describe('HysteresisController - Stability & Persistence', () => {
     confidence: 0.4,
   };
 
-  it('requires 600ms continuous persistence before entering READY / COUNTDOWN', () => {
-    const controller = new HysteresisController({ candidatePersistenceMs: 600 });
+  it('transitions from ALIGNING to READY_CANDIDATE to STABILITY_CONFIRMATION', () => {
+    const controller = new HysteresisController({ stabilityConfirmationMs: 220 });
     let t = 1000;
 
-    // First ready frame -> CANDIDATE_READY
+    // First ready frame -> READY_CANDIDATE
     let update = controller.update(readySpec, true, true, true, true, t);
-    expect(update.stage).toBe('CANDIDATE_READY');
+    expect(update.guidanceStage).toBe('READY_CANDIDATE');
     expect(update.shouldTriggerCapture).toBe(false);
 
-    // After 300ms (not yet 600ms) -> Still CANDIDATE_READY
-    t += 300;
+    // After 100ms stable -> STABILITY_CONFIRMATION
+    t += 100;
     update = controller.update(readySpec, true, true, true, true, t);
-    expect(update.stage).toBe('CANDIDATE_READY');
+    expect(update.guidanceStage).toBe('STABILITY_CONFIRMATION');
     expect(update.shouldTriggerCapture).toBe(false);
 
-    // After 600ms total -> COUNTDOWN (since autoCaptureEnabled = true)
-    t += 350;
+    // After 220ms total confirmation -> CAPTURE triggered
+    t += 130;
     update = controller.update(readySpec, true, true, true, true, t);
-    expect(update.stage).toBe('COUNTDOWN');
-    expect(update.countdownSeconds).toBeGreaterThan(0);
+    expect(update.guidanceStage).toBe('CAPTURED');
+    expect(update.shouldTriggerCapture).toBe(true);
   });
 
-  it('immediately drops out of COUNTDOWN if critical alignment is lost', () => {
-    const controller = new HysteresisController({ candidatePersistenceMs: 600, temporaryLossGraceMs: 100 });
+  it('drops out of confirmation if critical alignment is lost beyond jitter grace', () => {
+    const controller = new HysteresisController({ stabilityConfirmationMs: 220, jitterDebounceGraceMs: 50 });
     let t = 1000;
 
-    // Reach COUNTDOWN
-    controller.update(readySpec, true, true, true, true, t);
-    t += 650;
+    // Reach READY_CANDIDATE
     controller.update(readySpec, true, true, true, true, t);
 
-    // Subject turns away / breaks alignment
+    // Subject breaks alignment
     t += 200;
     const dropUpdate = controller.update(unreadySpec, false, false, false, true, t);
-    expect(dropUpdate.stage).toBe('ALIGNING');
+    expect(dropUpdate.guidanceStage).toBe('ALIGNING');
     expect(dropUpdate.shouldTriggerCapture).toBe(false);
   });
 
-  it('completes auto-capture sequence in ~1000ms under default clinical settings', () => {
-    const controller = new HysteresisController(); // default 250ms candidate persistence, 0.75s countdown
-    let t = 10000;
+  it('tolerates micro-jitter within 50ms grace period without dropping progress', () => {
+    const controller = new HysteresisController({ stabilityConfirmationMs: 220, jitterDebounceGraceMs: 50 });
+    let t = 1000;
 
-    // t=0: Alignment valid
-    let update = controller.update(readySpec, true, true, true, true, t);
-    expect(update.stage).toBe('CANDIDATE_READY');
-    expect(update.shouldTriggerCapture).toBe(false);
+    // t=0: Candidate ready
+    controller.update(readySpec, true, true, true, true, t);
 
-    // t=250ms: Candidate persistence satisfied -> enters COUNTDOWN
-    t += 250;
-    update = controller.update(readySpec, true, true, true, true, t);
-    expect(update.stage).toBe('COUNTDOWN');
-    expect(update.shouldTriggerCapture).toBe(false);
+    // t=50: Stability confirmation
+    t += 50;
+    controller.update(readySpec, true, true, true, true, t);
 
-    // t=250 + 750 = 1000ms total: Countdown finishes -> CAPTURED
-    t += 750;
-    update = controller.update(readySpec, true, true, true, true, t);
-    expect(update.stage).toBe('CAPTURED');
-    expect(update.shouldTriggerCapture).toBe(true);
+    // t=70: Single frame micro-jitter (20ms, well within 50ms grace)
+    t += 20;
+    const jitterUpdate = controller.update(unreadySpec, false, false, false, true, t);
+    expect(jitterUpdate.shouldTriggerCapture).toBe(false);
+
+    // t=100: Recovered alignment immediately
+    t += 30;
+    const recovered = controller.update(readySpec, true, true, true, true, t);
+    expect(recovered.guidanceStage).toBe('STABILITY_CONFIRMATION');
   });
 });

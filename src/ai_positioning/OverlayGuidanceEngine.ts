@@ -91,6 +91,8 @@ export class OverlayGuidanceEngine {
           positionValid: false,
           angleValid: false,
           distanceValid: false,
+          frameSizeValid: false,
+          stabilityValid: false,
           expressionValid: false,
           sharpnessValid,
           exposureValid,
@@ -98,6 +100,7 @@ export class OverlayGuidanceEngine {
           landmarkQualityValid: false,
           poseQualityValid: false,
           temporalStabilityValid,
+          highestPriorityCorrection: alignRes.correction.message,
           reasons: ['FACE_NOT_DETECTED'],
           confidence: 0,
         };
@@ -108,6 +111,7 @@ export class OverlayGuidanceEngine {
           alignmentScore: 0,
           alignmentCorrection: alignRes.correction,
           primaryMessage: alignRes.correction.message,
+          highestPriorityCorrection: alignRes.correction.message,
           statusType: 'searching',
           positionValid: false,
           positionMessage: 'Face not detected',
@@ -115,6 +119,10 @@ export class OverlayGuidanceEngine {
           angleMessage: 'Keep head upright',
           distanceValid: false,
           distanceMessage: 'Position patient',
+          frameSizeValid: false,
+          frameSizeMessage: 'Position patient',
+          stabilityValid: false,
+          stabilityMessage: 'Hold still',
           sharpnessValid,
           exposureValid,
           headRollDeg: 0,
@@ -158,13 +166,20 @@ export class OverlayGuidanceEngine {
       const positionValid =
         Math.abs(alignRes.centerErrorX) <= spec.centerToleranceX &&
         Math.abs(alignRes.centerErrorY) <= spec.centerToleranceY + 0.05;
-      const distanceValid = alignRes.distanceError === 0;
+      const frameSizeValid = alignRes.distanceError === 0;
+      const distanceValid = frameSizeValid;
       const angleValid =
         alignRes.yawErrorDeg <= spec.yawToleranceDeg &&
         alignRes.pitchErrorDeg <= spec.pitchToleranceDeg &&
         alignRes.rollErrorDeg <= spec.rollToleranceDeg &&
         (!(view.id === 'RIGHT_PROFILE' || view.id === 'LEFT_PROFILE') ||
           (input.profileState?.isCaptureEligible === true && input.profileState?.isProfileAligned === true));
+      const stabilityValid = temporalStabilityValid;
+
+      const positionMessage = positionValid ? 'POSITION ✓' : alignRes.correction.message;
+      const angleMessage = angleValid ? 'ANGLE ✓' : alignRes.correction.message;
+      const frameSizeMessage = frameSizeValid ? 'FRAME SIZE ✓' : alignRes.correction.message;
+      const stabilityMessage = stabilityValid ? 'STABILITY ✓' : 'HOLD STILL';
 
       const readiness: CaptureReadiness = {
         ready: alignRes.ready,
@@ -172,6 +187,8 @@ export class OverlayGuidanceEngine {
         positionValid,
         angleValid,
         distanceValid,
+        frameSizeValid,
+        stabilityValid,
         expressionValid: alignRes.expressionValid,
         sharpnessValid,
         exposureValid,
@@ -179,6 +196,7 @@ export class OverlayGuidanceEngine {
         landmarkQualityValid: alignRes.landmarksValid,
         poseQualityValid: alignRes.poseValid,
         temporalStabilityValid,
+        highestPriorityCorrection: alignRes.correction.message,
         reasons: alignRes.reasons,
         confidence: (pose.confidence + landmarkQuality.confidence) / 2,
       };
@@ -188,14 +206,19 @@ export class OverlayGuidanceEngine {
         readyScore: alignRes.alignmentScore,
         alignmentScore: alignRes.alignmentScore,
         alignmentCorrection: alignRes.correction,
-        primaryMessage: alignRes.ready ? 'CAPTURE READY — HOLD STILL' : alignRes.correction.message,
+        primaryMessage: alignRes.ready ? 'READY — HOLD STILL' : alignRes.correction.message,
+        highestPriorityCorrection: alignRes.correction.message,
         statusType: alignRes.ready ? 'ready' : 'adjust',
         positionValid,
-        positionMessage: positionValid ? 'Position ✓' : alignRes.correction.message,
+        positionMessage,
         angleValid,
-        angleMessage: angleValid ? 'Angle ✓' : alignRes.correction.message,
-        distanceValid,
-        distanceMessage: distanceValid ? 'Distance ✓' : alignRes.correction.message,
+        angleMessage,
+        distanceValid: frameSizeValid,
+        distanceMessage: frameSizeMessage,
+        frameSizeValid,
+        frameSizeMessage,
+        stabilityValid,
+        stabilityMessage,
         sharpnessValid,
         exposureValid,
         headRollDeg: roll,
@@ -230,6 +253,8 @@ export class OverlayGuidanceEngine {
         positionValid: false,
         angleValid: false,
         distanceValid: false,
+        frameSizeValid: false,
+        stabilityValid: false,
         expressionValid: false,
         sharpnessValid,
         exposureValid,
@@ -237,6 +262,7 @@ export class OverlayGuidanceEngine {
         landmarkQualityValid: true,
         poseQualityValid: true,
         temporalStabilityValid,
+        highestPriorityCorrection: 'ALIGN DENTAL ARCH',
         reasons: ['TEETH_NOT_DETECTED'],
         confidence: 0,
       };
@@ -245,13 +271,18 @@ export class OverlayGuidanceEngine {
         isReady: false,
         readyScore: 10,
         primaryMessage: 'Align dental arch in guide',
+        highestPriorityCorrection: 'ALIGN DENTAL ARCH',
         statusType: 'searching',
         positionValid: false,
         positionMessage: 'Teeth not detected',
         angleValid: false,
         angleMessage: 'Position arch',
         distanceValid: false,
-        distanceMessage: 'Adjust distance',
+        distanceMessage: 'Adjust frame size',
+        frameSizeValid: false,
+        frameSizeMessage: 'Adjust frame size',
+        stabilityValid: false,
+        stabilityMessage: 'Hold still',
         sharpnessValid,
         exposureValid,
         headRollDeg: 0,
@@ -270,35 +301,65 @@ export class OverlayGuidanceEngine {
     }
 
     const midlineValid = view.id !== 'ANTERIOR_INTRAORAL' || Math.abs(intra.dentalMidlineOffset) <= 0.25;
-    const distanceValid = intra.archCoverageRatio >= 0.55 && intra.archCoverageRatio <= 1.2;
+    const frameSizeValid = intra.archCoverageRatio >= 0.55 && intra.archCoverageRatio <= 1.2;
+    const distanceValid = frameSizeValid;
     const angleValid = Math.abs(intra.occlusalPlaneTiltDeg) <= 8;
     const retractorValid = intra.retractorAdequate;
+    const stabilityValid = temporalStabilityValid;
 
     const reasons: string[] = [];
     if (!midlineValid) reasons.push('CENTER_DENTAL_MIDLINE');
-    if (!distanceValid) reasons.push(intra.archCoverageRatio < 0.55 ? 'MOVE_CLOSER' : 'INCREASE_DISTANCE');
+    if (!frameSizeValid) reasons.push(intra.archCoverageRatio < 0.55 ? 'MOVE_CLOSER' : 'MOVE_BACK');
     if (!angleValid) reasons.push('LEVEL_OCCLUSAL_PLANE');
     if (!retractorValid) reasons.push('PULL_RETRACTORS_OUTWARD');
     if (!sharpnessValid) reasons.push('IMAGE_BLURRY');
     if (!exposureValid) reasons.push('ADJUST_LIGHTING');
-    if (!temporalStabilityValid) reasons.push('HOLD_STILL');
+    if (!stabilityValid) reasons.push('HOLD_STILL');
 
     const allValid =
       midlineValid &&
-      distanceValid &&
+      frameSizeValid &&
       angleValid &&
       retractorValid &&
       sharpnessValid &&
       exposureValid &&
-      temporalStabilityValid;
+      stabilityValid;
 
     const score = Math.round(
       (midlineValid ? 25 : 5) +
-      (distanceValid ? 25 : 5) +
+      (frameSizeValid ? 25 : 5) +
       (angleValid ? 20 : 5) +
       (retractorValid ? 15 : 0) +
-      (temporalStabilityValid ? 15 : 0)
+      (stabilityValid ? 15 : 0)
     );
+
+    let primaryMessage = 'Adjust Intraoral Alignment';
+    let highestPriorityCorrection = 'ADJUST ALIGNMENT';
+
+    if (allValid) {
+      primaryMessage = 'READY — HOLD STILL';
+      highestPriorityCorrection = 'READY — HOLD STILL';
+    } else if (!stabilityValid) {
+      primaryMessage = 'Hold steady (device motion detected)';
+      highestPriorityCorrection = 'HOLD STILL';
+    } else if (!retractorValid) {
+      primaryMessage = 'Pull cheek retractors outward';
+      highestPriorityCorrection = 'PULL RETRACTORS OUTWARD';
+    } else if (!midlineValid) {
+      primaryMessage = 'Center dental midline';
+      highestPriorityCorrection = 'CENTER MIDLINE';
+    } else if (!frameSizeValid) {
+      primaryMessage = intra.archCoverageRatio < 0.55 ? 'Move closer' : 'Move back';
+      highestPriorityCorrection = intra.archCoverageRatio < 0.55 ? 'MOVE CLOSER' : 'MOVE BACK';
+    } else if (!angleValid) {
+      primaryMessage = 'Level occlusal plane horizontally';
+      highestPriorityCorrection = 'LEVEL OCCLUSAL PLANE';
+    }
+
+    const positionMessage = midlineValid ? 'POSITION ✓' : 'CENTER MIDLINE';
+    const angleMessage = angleValid ? 'ANGLE ✓' : 'LEVEL PLANE';
+    const frameSizeMessage = frameSizeValid ? 'FRAME SIZE ✓' : (intra.archCoverageRatio < 0.55 ? 'MOVE CLOSER' : 'MOVE BACK');
+    const stabilityMessage = stabilityValid ? 'STABILITY ✓' : 'HOLD STILL';
 
     const readiness: CaptureReadiness = {
       ready: allValid,
@@ -306,6 +367,8 @@ export class OverlayGuidanceEngine {
       positionValid: midlineValid,
       angleValid,
       distanceValid,
+      frameSizeValid,
+      stabilityValid,
       expressionValid: retractorValid,
       sharpnessValid,
       exposureValid,
@@ -313,36 +376,27 @@ export class OverlayGuidanceEngine {
       landmarkQualityValid: true,
       poseQualityValid: true,
       temporalStabilityValid,
+      highestPriorityCorrection,
       reasons,
       confidence: intra.confidence,
     };
-
-    let primaryMessage = 'Adjust Intraoral Alignment';
-    if (allValid) {
-      primaryMessage = 'CAPTURE READY — HOLD STILL';
-    } else if (!temporalStabilityValid) {
-      primaryMessage = 'Hold steady (device motion detected)';
-    } else if (!retractorValid) {
-      primaryMessage = 'Pull cheek retractors outward';
-    } else if (!midlineValid) {
-      primaryMessage = 'Center maxillary dental midline';
-    } else if (!distanceValid) {
-      primaryMessage = intra.archCoverageRatio < 0.55 ? 'Move camera closer to teeth' : 'Increase distance';
-    } else if (!angleValid) {
-      primaryMessage = 'Level occlusal plane horizontally';
-    }
 
     return {
       isReady: allValid,
       readyScore: score,
       primaryMessage,
+      highestPriorityCorrection,
       statusType: allValid ? 'ready' : 'adjust',
       positionValid: midlineValid,
-      positionMessage: midlineValid ? 'Position ✓' : 'Center dental midline',
+      positionMessage,
       angleValid,
-      angleMessage: angleValid ? 'Angle ✓' : 'Level occlusal plane',
-      distanceValid,
-      distanceMessage: distanceValid ? 'Distance ✓' : 'Adjust distance',
+      angleMessage,
+      distanceValid: frameSizeValid,
+      distanceMessage: frameSizeMessage,
+      frameSizeValid,
+      frameSizeMessage,
+      stabilityValid,
+      stabilityMessage,
       sharpnessValid,
       exposureValid,
       headRollDeg: intra.occlusalPlaneTiltDeg,

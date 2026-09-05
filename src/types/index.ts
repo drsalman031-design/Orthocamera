@@ -50,7 +50,9 @@ export interface CaptureReadiness {
   score: number;
   positionValid: boolean;
   angleValid: boolean;
-  distanceValid: boolean;
+  distanceValid: boolean; // Retained for backward-compat
+  frameSizeValid?: boolean; // Standardized clinical frame-size metric
+  stabilityValid?: boolean; // Alias for temporalStabilityValid
   expressionValid: boolean;
   sharpnessValid: boolean;
   exposureValid: boolean;
@@ -58,6 +60,7 @@ export interface CaptureReadiness {
   landmarkQualityValid: boolean;
   poseQualityValid: boolean;
   temporalStabilityValid: boolean;
+  highestPriorityCorrection?: string;
   reasons: string[];
   confidence: number;
 }
@@ -143,18 +146,30 @@ export interface LiveGuidanceState {
   primaryMessage: string;
   statusType: 'ready' | 'adjust' | 'searching';
   
-  // Specific checks
+  // Specific checks (4 Independent States)
   positionValid: boolean;
   positionMessage: string;
   
+  frameSizeValid: boolean;
+  frameSizeMessage: string;
+
   angleValid: boolean;
   angleMessage: string;
   
+  stabilityValid: boolean;
+  stabilityMessage: string;
+
+  // Backward compatibility alias for frameSize
   distanceValid: boolean;
   distanceMessage: string;
   
   sharpnessValid: boolean;
   exposureValid: boolean;
+  
+  // Pipeline stage and latency telemetry
+  guidanceStage?: 'SEARCHING' | 'ALIGNING' | 'READY_CANDIDATE' | 'STABILITY_CONFIRMATION' | 'READY' | 'CAPTURED' | 'COOLDOWN';
+  timeToCaptureMs?: number;
+  highestPriorityCorrection?: string;
   
   // Raw measurements
   headRollDeg: number;
@@ -245,7 +260,10 @@ export interface ClinicalCase {
 
 export interface AppSettings {
   autoCaptureEnabled: boolean;
-  autoCaptureDelaySec: number; // e.g. 2 or 3 seconds
+  autoCaptureDelaySec: number; // Retained for backward compat
+  stabilityConfirmationMs: number; // 200 - 300 ms continuous stability requirement
+  burstModeEnabled: boolean; // Default false (Instant Single Shot)
+  burstCount: number; // Default 3 when enabled
   showClinicalGrid: boolean;
   showReferenceLabels: boolean;
   showFaceMesh: boolean; // Real-time 3D landmark mesh visualization

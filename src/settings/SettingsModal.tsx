@@ -47,12 +47,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Settings Body */}
         <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto text-xs">
           {/* 1. Auto Capture */}
+          {/* Auto-Capture Settings */}
           <div className="bg-slate-900/80 border border-slate-800/90 rounded-2xl p-4 space-y-3 shadow-md">
             <div className="flex items-center justify-between">
               <div>
-                <span className="font-bold text-slate-100 text-sm block">Auto-Capture (3-Photo Burst)</span>
+                <span className="font-bold text-slate-100 text-sm block">Auto-Capture</span>
                 <p className="text-slate-400 text-[11px] leading-relaxed">
-                  Automatically triggers a rapid 3-photo burst countdown when alignment criteria are satisfied.
+                  Instantly captures photo when clinical alignment and stability are confirmed.
                 </p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer ml-3">
@@ -69,26 +70,66 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             {settings.autoCaptureEnabled && (
-              <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between">
-                <span className="text-slate-300 font-mono text-[11px]">Countdown Delay</span>
-                <div className="flex items-center gap-1.5">
-                  {[0.5, 1, 2].map((sec) => (
+              <>
+                {/* Single Shot vs Burst Mode */}
+                <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between">
+                  <div>
+                    <span className="text-slate-200 font-medium text-xs block">Shutter Mode</span>
+                    <span className="text-slate-400 text-[10px]">Single shot for low latency & thermal efficiency</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
                     <button
-                      key={sec}
                       onClick={() =>
-                        onUpdateSettings({ ...settings, autoCaptureDelaySec: sec })
+                        onUpdateSettings({ ...settings, burstModeEnabled: false })
                       }
                       className={`px-3 py-1 rounded-lg font-mono text-xs font-bold transition-all ${
-                        settings.autoCaptureDelaySec === sec
+                        !settings.burstModeEnabled
                           ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 text-slate-950 shadow-[0_0_10px_rgba(16,185,129,0.4)]'
                           : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
                       }`}
                     >
-                      {sec}s
+                      Single
                     </button>
-                  ))}
+                    <button
+                      onClick={() =>
+                        onUpdateSettings({ ...settings, burstModeEnabled: true, burstCount: 3 })
+                      }
+                      className={`px-3 py-1 rounded-lg font-mono text-xs font-bold transition-all ${
+                        settings.burstModeEnabled
+                          ? 'bg-gradient-to-r from-cyan-500 to-cyan-400 text-slate-950 shadow-[0_0_10px_rgba(6,182,212,0.4)]'
+                          : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      3-Burst
+                    </button>
+                  </div>
                 </div>
-              </div>
+
+                {/* Stability Confirmation Duration */}
+                <div className="pt-2.5 border-t border-slate-800/60 flex items-center justify-between">
+                  <div>
+                    <span className="text-slate-200 font-medium text-xs block">Stability Window</span>
+                    <span className="text-slate-400 text-[10px]">Hold-still verification duration</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {[200, 220, 300].map((ms) => (
+                      <button
+                        key={ms}
+                        onClick={() =>
+                          onUpdateSettings({ ...settings, stabilityConfirmationMs: ms })
+                        }
+                        className={`px-2.5 py-1 rounded-lg font-mono text-xs font-bold transition-all ${
+                          (settings.stabilityConfirmationMs || 220) === ms
+                            ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 text-slate-950 shadow-[0_0_10px_rgba(16,185,129,0.4)]'
+                            : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {ms}ms
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
             )}
           </div>
 

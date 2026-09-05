@@ -205,31 +205,13 @@ const WorkflowHeaderComponent: React.FC<WorkflowHeaderProps> = ({
         {isReady ? (
           <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-950/95 border border-emerald-400 text-emerald-200 text-xs font-bold tracking-wide shadow-[0_0_20px_rgba(16,185,129,0.5)] backdrop-blur-xl animate-in zoom-in-95 duration-200">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
-            <span className="font-mono text-emerald-300">
-              {Math.round(guidance.readyScore || guidance.readiness?.score || 90)}% ALIGNED
-            </span>
+            <span className="font-mono text-emerald-300 font-extrabold">READY</span>
             <span className="text-emerald-500">•</span>
-            <span>CAPTURE READY — HOLD STILL</span>
+            <span>HOLD STILL</span>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-1.5">
             <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-black/85 border border-white/15 backdrop-blur-xl shadow-lg text-[10px] font-mono">
-              {/* Continuous Score Pill */}
-              <span className="flex items-center gap-1 font-bold text-cyan-300">
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    guidance.readyScore >= 70
-                      ? 'bg-emerald-400'
-                      : guidance.readyScore >= 40
-                      ? 'bg-amber-400'
-                      : 'bg-slate-500'
-                  }`}
-                />
-                {guidance.readyScore}% ALIGNED
-              </span>
-
-              <span className="text-slate-600 text-[8px] font-bold">•</span>
-
               {/* Position */}
               <span
                 className={`flex items-center gap-0.5 font-bold ${
@@ -241,7 +223,23 @@ const WorkflowHeaderComponent: React.FC<WorkflowHeaderProps> = ({
                 ) : (
                   <AlertCircle className="w-3 h-3 text-amber-400" />
                 )}
-                CENTER
+                POSITION
+              </span>
+
+              <span className="text-slate-600 text-[8px] font-bold">•</span>
+
+              {/* Frame Size */}
+              <span
+                className={`flex items-center gap-0.5 font-bold ${
+                  (guidance.frameSizeValid ?? guidance.distanceValid) ? 'text-emerald-400' : 'text-slate-400'
+                }`}
+              >
+                {(guidance.frameSizeValid ?? guidance.distanceValid) ? (
+                  <Check className="w-3 h-3 stroke-[3]" />
+                ) : (
+                  <AlertCircle className="w-3 h-3 text-amber-400" />
+                )}
+                FRAME SIZE
               </span>
 
               <span className="text-slate-600 text-[8px] font-bold">•</span>
@@ -262,41 +260,25 @@ const WorkflowHeaderComponent: React.FC<WorkflowHeaderProps> = ({
 
               <span className="text-slate-600 text-[8px] font-bold">•</span>
 
-              {/* Distance */}
-              <span
-                className={`flex items-center gap-0.5 font-bold ${
-                  guidance.distanceValid ? 'text-emerald-400' : 'text-slate-400'
-                }`}
-              >
-                {guidance.distanceValid ? (
-                  <Check className="w-3 h-3 stroke-[3]" />
-                ) : (
-                  <AlertCircle className="w-3 h-3 text-amber-400" />
-                )}
-                DISTANCE
-              </span>
-
-              <span className="text-slate-600 text-[8px] font-bold">•</span>
-
               {/* Stability */}
               <span
                 className={`flex items-center gap-0.5 font-bold ${
-                  guidance.isStable ? 'text-emerald-400' : 'text-slate-400'
+                  (guidance.stabilityValid ?? guidance.isStable) ? 'text-emerald-400' : 'text-slate-400'
                 }`}
               >
-                {guidance.isStable ? (
+                {(guidance.stabilityValid ?? guidance.isStable) ? (
                   <Check className="w-3 h-3 stroke-[3]" />
                 ) : (
                   <AlertCircle className="w-3 h-3 text-amber-400" />
                 )}
-                STABLE
+                STABILITY
               </span>
             </div>
 
-            {/* Single Highest-Priority Guidance Message */}
-            {guidance.primaryMessage && (
-              <div className="px-3 py-0.5 rounded-full bg-slate-900/90 border border-slate-700/80 text-[11px] font-sans font-semibold text-cyan-300 shadow-md">
-                {guidance.primaryMessage}
+            {/* Single Highest-Priority Guidance Message with numerical magnitude */}
+            {(guidance.highestPriorityCorrection || guidance.primaryMessage) && (
+              <div className="px-3 py-0.5 rounded-full bg-slate-900/90 border border-slate-700/80 text-[11px] font-sans font-semibold text-cyan-300 shadow-md uppercase tracking-wider">
+                {guidance.highestPriorityCorrection || guidance.primaryMessage}
               </div>
             )}
           </div>

@@ -324,35 +324,37 @@ export class ClinicalAlignmentEngine {
       };
     } else if (!positionValid) {
       if (Math.abs(centerErrorX) > spec.centerToleranceX) {
+        const pct = Math.max(1, Math.round(Math.abs(centerErrorX) * 100));
         if (centerErrorX < 0) {
           reasons.push('ALIGN_FACE_RIGHT');
           correction = {
             direction: 'RIGHT',
             magnitude: Math.abs(centerErrorX),
-            message: 'MOVE RIGHT',
+            message: `MOVE RIGHT ${pct}%`,
           };
         } else {
           reasons.push('ALIGN_FACE_LEFT');
           correction = {
             direction: 'LEFT',
             magnitude: Math.abs(centerErrorX),
-            message: 'MOVE LEFT',
+            message: `MOVE LEFT ${pct}%`,
           };
         }
       } else {
+        const pct = Math.max(1, Math.round(Math.abs(centerErrorY) * 100));
         if (centerErrorY < 0) {
           reasons.push('ALIGN_FACE_DOWN');
           correction = {
             direction: 'DOWN',
             magnitude: Math.abs(centerErrorY),
-            message: 'MOVE DOWN',
+            message: `MOVE DOWN ${pct}%`,
           };
         } else {
           reasons.push('ALIGN_FACE_UP');
           correction = {
             direction: 'UP',
             magnitude: Math.abs(centerErrorY),
-            message: 'MOVE UP',
+            message: `MOVE UP ${pct}%`,
           };
         }
       }
@@ -373,88 +375,86 @@ export class ClinicalAlignmentEngine {
         };
       }
     } else if (rollErrorDeg > spec.rollToleranceDeg) {
-      if (roll > spec.targetRollDeg) {
-        reasons.push('ROTATE_LEFT');
-        correction = {
-          direction: 'ROTATE_LEFT',
-          magnitude: rollErrorDeg,
-          message: 'ROTATE LEFT',
-        };
-      } else {
-        reasons.push('ROTATE_RIGHT');
-        correction = {
-          direction: 'ROTATE_RIGHT',
-          magnitude: rollErrorDeg,
-          message: 'ROTATE RIGHT',
-        };
-      }
+      const rollDeg = Math.max(1, Math.round(rollErrorDeg));
+      reasons.push('LEVEL_HEAD');
+      correction = {
+        direction: roll > spec.targetRollDeg ? 'ROTATE_LEFT' : 'ROTATE_RIGHT',
+        magnitude: rollErrorDeg,
+        message: `LEVEL HEAD ${rollDeg}°`,
+      };
     } else if (yawErrorDeg > spec.yawToleranceDeg || (isProfileView && !angleValid)) {
       if (isProfileView) {
         if (currentView.id === 'RIGHT_PROFILE') {
           if (yaw < 82) {
+            const deg = Math.max(1, Math.round(90 - yaw));
             reasons.push('TURN_PATIENT_RIGHT');
             correction = {
               direction: 'RIGHT',
               magnitude: 90 - yaw,
-              message: 'TURN RIGHT (90° Profile)',
+              message: `TURN RIGHT ${deg}°`,
             };
           } else {
+            const deg = Math.max(1, Math.round(yaw - 90));
             reasons.push('TURN_PATIENT_LEFT');
             correction = {
               direction: 'LEFT',
               magnitude: yaw - 90,
-              message: 'TURN LEFT (90° Profile)',
+              message: `TURN LEFT ${deg}°`,
             };
           }
         } else {
           // Left profile
           if (yaw > -82) {
+            const deg = Math.max(1, Math.round(yaw + 90));
             reasons.push('TURN_PATIENT_LEFT');
             correction = {
               direction: 'LEFT',
               magnitude: yaw + 90,
-              message: 'TURN LEFT (90° Profile)',
+              message: `TURN LEFT ${deg}°`,
             };
           } else {
+            const deg = Math.max(1, Math.round(-90 - yaw));
             reasons.push('TURN_PATIENT_RIGHT');
             correction = {
               direction: 'RIGHT',
               magnitude: -90 - yaw,
-              message: 'TURN RIGHT (90° Profile)',
+              message: `TURN RIGHT ${deg}°`,
             };
           }
         }
       } else {
+        const yawDeg = Math.max(1, Math.round(yawErrorDeg));
         if (yaw > spec.targetYawDeg) {
           reasons.push('TURN_HEAD_LEFT');
           correction = {
             direction: 'LEFT',
             magnitude: yawErrorDeg,
-            message: 'ROTATE LEFT',
+            message: `TURN LEFT ${yawDeg}°`,
           };
         } else {
           reasons.push('TURN_HEAD_RIGHT');
           correction = {
             direction: 'RIGHT',
             magnitude: yawErrorDeg,
-            message: 'ROTATE RIGHT',
+            message: `TURN RIGHT ${yawDeg}°`,
           };
         }
       }
     } else if (pitchErrorDeg > spec.pitchToleranceDeg) {
+      const pitchDeg = Math.max(1, Math.round(pitchErrorDeg));
       if (pitch > spec.targetPitchDeg) {
         reasons.push('LOWER_CHIN');
         correction = {
           direction: 'DOWN',
           magnitude: pitchErrorDeg,
-          message: 'LOWER CHIN',
+          message: `LOWER CHIN ${pitchDeg}°`,
         };
       } else {
         reasons.push('RAISE_CHIN');
         correction = {
           direction: 'UP',
           magnitude: pitchErrorDeg,
-          message: 'RAISE CHIN',
+          message: `RAISE CHIN ${pitchDeg}°`,
         };
       }
     } else if (!expressionValid && spec.requiresSmile) {
@@ -462,7 +462,7 @@ export class ClinicalAlignmentEngine {
       correction = {
         direction: 'HOLD_STILL',
         magnitude: 0.5,
-        message: 'Instruct patient to smile naturally',
+        message: 'Smile naturally',
       };
     } else if (!sharpnessValid) {
       reasons.push('IMAGE_BLURRY');
@@ -479,11 +479,11 @@ export class ClinicalAlignmentEngine {
         message: 'Adjust lighting',
       };
     } else if (!stabilityValid) {
-      reasons.push('HOLD_STEADY');
+      reasons.push('HOLD_STILL');
       correction = {
         direction: 'HOLD_STILL',
         magnitude: motionScore / 100,
-        message: 'Hold steady (device motion)',
+        message: 'HOLD STILL',
       };
     } else {
       correction = {

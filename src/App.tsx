@@ -27,7 +27,10 @@ import { Check, AlertCircle, Camera } from 'lucide-react';
 
 const DEFAULT_SETTINGS: AppSettings = {
   autoCaptureEnabled: true,
-  autoCaptureDelaySec: 0.6, // Ultra-responsive 0.6s countdown
+  autoCaptureDelaySec: 0,
+  burstModeEnabled: false,
+  burstCount: 3,
+  stabilityConfirmationMs: 220,
   showClinicalGrid: false,
   showFaceMesh: true,
   showReferenceLabels: true,
@@ -138,10 +141,10 @@ export default function App() {
     });
   }, []);
 
-  // Update Hysteresis Controller delay when setting changes
+  // Update Hysteresis Controller stability confirmation duration when setting changes
   useEffect(() => {
-    hysteresisRef.current.setCountdownDuration(settings.autoCaptureDelaySec);
-  }, [settings.autoCaptureDelaySec]);
+    hysteresisRef.current.setStabilityConfirmationDuration(settings.stabilityConfirmationMs || 220);
+  }, [settings.stabilityConfirmationMs]);
 
   // Audio Chime Synthesizer
   const playCaptureChime = useCallback(() => {
@@ -169,14 +172,13 @@ export default function App() {
   // Handle Guidance Updates from Camera Manager & Drive Hysteresis Controller
   const handleGuidanceUpdate = useCallback(
     (newGuidance: LiveGuidanceState) => {
-      setGuidance(newGuidance);
-
       if (capturedPhotoForReview !== null) {
         setAutoCaptureCountdown(null);
+        setGuidance(newGuidance);
         return;
       }
 
-      // Drive state machine with hysteresis to eliminate flickering countdowns
+      // Drive state machine with hysteresis: SEARCHING -> ALIGNING -> READY_CANDIDATE -> STABILITY_CONFIRMATION -> CAPTURE
       const isMotionStatic = (newGuidance.motionScore ?? 0) < 20;
       const update = hysteresisRef.current.update(
         newGuidance.readiness || newGuidance.readyScore,
@@ -185,6 +187,14 @@ export default function App() {
         isMotionStatic,
         settings.autoCaptureEnabled
       );
+
+      const enhancedGuidance: LiveGuidanceState = {
+        ...newGuidance,
+        guidanceStage: update.guidanceStage,
+        timeToCaptureMs: update.timeToCaptureMs,
+        isReady: update.guidanceStage === 'READY_CANDIDATE' || update.guidanceStage === 'STABILITY_CONFIRMATION',
+      };
+      setGuidance(enhancedGuidance);
 
       setAutoCaptureCountdown(update.countdownSeconds);
 
@@ -462,6 +472,8 @@ export default function App() {
         onFacingModeChange={setFacingMode}
         zoomLevel={zoomLevel}
         onZoomChange={setZoomLevel}
+        burstModeEnabled={settings.burstModeEnabled}
+        burstCount={settings.burstCount}
         onTelemetryUpdate={setTelemetry}
         onSwipeNext={() => setCurrentViewIndex((prev) => Math.min(ORTHODONTIC_VIEWS.length - 1, prev + 1))}
         onSwipePrevious={() => setCurrentViewIndex((prev) => Math.max(0, prev - 1))}

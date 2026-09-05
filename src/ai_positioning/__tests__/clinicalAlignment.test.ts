@@ -230,7 +230,7 @@ describe('ClinicalAlignmentEngine', () => {
     });
     expect(resultRight.ready).toBe(false);
     expect(resultRight.correction.direction).toBe('LEFT');
-    expect(resultRight.correction.message).toBe('MOVE LEFT');
+    expect(resultRight.correction.message).toContain('MOVE LEFT');
 
     // Patient face shifted far left (center.x = 0.15) -> Must instruct MOVE RIGHT (Prompt 16)
     const leftShifted: FaceAnalysisResult = {
@@ -244,7 +244,7 @@ describe('ClinicalAlignmentEngine', () => {
     });
     expect(resultLeft.ready).toBe(false);
     expect(resultLeft.correction.direction).toBe('RIGHT');
-    expect(resultLeft.correction.message).toBe('MOVE RIGHT');
+    expect(resultLeft.correction.message).toContain('MOVE RIGHT');
 
     // Patient face shifted far up (center.y = 0.15) -> Must instruct MOVE DOWN
     const upShifted: FaceAnalysisResult = {
@@ -258,7 +258,7 @@ describe('ClinicalAlignmentEngine', () => {
     });
     expect(resultUp.ready).toBe(false);
     expect(resultUp.correction.direction).toBe('DOWN');
-    expect(resultUp.correction.message).toBe('MOVE DOWN');
+    expect(resultUp.correction.message).toContain('MOVE DOWN');
 
     // Patient face shifted far down (center.y = 0.85) -> Must instruct MOVE UP
     const downShifted: FaceAnalysisResult = {
@@ -272,7 +272,7 @@ describe('ClinicalAlignmentEngine', () => {
     });
     expect(resultDown.ready).toBe(false);
     expect(resultDown.correction.direction).toBe('UP');
-    expect(resultDown.correction.message).toBe('MOVE UP');
+    expect(resultDown.correction.message).toContain('MOVE UP');
   });
 
   it('guides patient with correct direction on distance error (closer, back)', () => {
@@ -306,7 +306,7 @@ describe('ClinicalAlignmentEngine', () => {
   });
 
   it('guides patient with correct direction on roll tilt (rotate left, rotate right)', () => {
-    // Head tilted 12 degrees to the right -> Must instruct ROTATE LEFT
+    // Head tilted 12 degrees to the right -> Must instruct ROTATE LEFT / LEVEL HEAD
     const tiltedRightFace: FaceAnalysisResult = {
       ...validMediaPipeFace,
       rollDeg: 12,
@@ -318,9 +318,9 @@ describe('ClinicalAlignmentEngine', () => {
     });
     expect(resultRotateLeft.ready).toBe(false);
     expect(resultRotateLeft.correction.direction).toBe('ROTATE_LEFT');
-    expect(resultRotateLeft.correction.message).toBe('ROTATE LEFT');
+    expect(resultRotateLeft.correction.message).toContain('LEVEL HEAD');
 
-    // Head tilted -12 degrees to the left -> Must instruct ROTATE RIGHT
+    // Head tilted -12 degrees to the left -> Must instruct ROTATE RIGHT / LEVEL HEAD
     const tiltedLeftFace: FaceAnalysisResult = {
       ...validMediaPipeFace,
       rollDeg: -12,
@@ -332,7 +332,7 @@ describe('ClinicalAlignmentEngine', () => {
     });
     expect(resultRotateRight.ready).toBe(false);
     expect(resultRotateRight.correction.direction).toBe('ROTATE_RIGHT');
-    expect(resultRotateRight.correction.message).toBe('ROTATE RIGHT');
+    expect(resultRotateRight.correction.message).toContain('LEVEL HEAD');
   });
 
   it('enforces smile condition for FRONTAL_SMILE view', () => {
@@ -347,7 +347,7 @@ describe('ClinicalAlignmentEngine', () => {
     });
     expect(result.ready).toBe(false);
     expect(result.expressionValid).toBe(false);
-    expect(result.correction.message).toContain('smile naturally');
+    expect(result.correction.message.toLowerCase()).toContain('smile naturally');
 
     const smilingFace: FaceAnalysisResult = {
       ...validMediaPipeFace,

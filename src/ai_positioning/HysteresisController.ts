@@ -4,64 +4,99 @@ import { CapturePerformanceTracker } from '../telemetry/CapturePerformanceTracke
 export type GuidanceStateStage =
   | 'SEARCHING'
   | 'ALIGNING'
-  | 'CANDIDATE_READY'
+  | 'READY_CANDIDATE'
+  | 'STABILITY_CONFIRMATION'
   | 'READY'
-  | 'COUNTDOWN'
-  | 'PAUSED_MOTION'
   | 'CAPTURED'
   | 'COOLDOWN';
 
 export interface HysteresisConfig {
-  enterReadyScore: number; // 85
+  enterReadyScore: number; // 80
   exitReadyScore: number; // 70
-  candidatePersistenceMs: number; // 250-350ms stable in CANDIDATE_READY before READY
-  temporaryLossGraceMs: number; // 200ms grace period before dropping from READY
-  cooldownPeriodMs: number; // 700ms lockout after capture
+  stabilityConfirmationMs: number; // 220ms (clinically validated 200–250ms)
+  jitterDebounceGraceMs: number; // 50ms buffer to absorb single-frame sensor noise
+  cooldownPeriodMs: number; // 500ms post-capture shutter lockout
 }
 
 export interface ControllerStateUpdate {
   stage: GuidanceStateStage;
-  countdownSeconds: number | null;
+  guidanceStage: GuidanceStateStage; // Alias for stage
+  timeToCaptureMs: number;
+  countdownSeconds: number | null; // Kept for backward compatibility
+  isReady: boolean;
   shouldTriggerCapture: boolean;
   statusMessage: string;
+  candidateToCaptureLatencyMs: number;
 }
 
 export class HysteresisController {
   private config: HysteresisConfig;
   private currentStage: GuidanceStateStage = 'SEARCHING';
   private candidateStartTime: number | null = null;
-  private lastValidReadyTime: number = 0;
+  private stabilityStartTime: number | null = null;
+  private lastValidTime: number = 0;
   private lastCaptureTime: number = 0;
-  private countdownValue: number | null = null;
-  private countdownStartTime: number | null = null;
-  private countdownDurationSec: number = 0.5;
+  private candidateToCaptureLatencyMs: number = 0;
 
   constructor(customConfig?: Partial<HysteresisConfig>) {
     this.config = {
-      enterReadyScore: 85,
+      enterReadyScore: 80,
       exitReadyScore: 70,
-      candidatePersistenceMs: 120,
-      temporaryLossGraceMs: 200,
-      cooldownPeriodMs: 600,
+      stabilityConfirmationMs: 220, // 200–250 ms target
+      jitterDebounceGraceMs: 50, // Debounce single-frame drop
+      cooldownPeriodMs: 500,
       ...customConfig,
     };
   }
 
-  public setCountdownDuration(seconds: number) {
-    this.countdownDurationSec = Math.max(0.3, Math.min(5, seconds));
+  public setStabilityDurationMs(ms: number): void {
+    this.config.stabilityConfirmationMs = Math.max(150, Math.min(500, ms));
   }
 
-  /**
-   * Evaluates the current frame against hysteresis rules and returns the updated state.
-   */
+  public setCountdownDuration(seconds: number): void {
+    // Adapter for legacy settings call
+    this.config.stabilityConfirmationMs = Math.max(180, Math.min(450, Math.round(seconds * 350)));
+  }
+
+  public getStage(): GuidanceStateStage {
+    return this.currentStage;
+  }
+
+  public getCandidateToCaptureLatencyMs(): number {
+    return this.candidateToCaptureLatencyMs;
+  }
+
+
+  private makeResult(
+    stage: GuidanceStateStage,
+    isReady: boolean,
+    shouldTriggerCapture: boolean,
+    statusMessage: string,
+    latencyMs: number,
+    timeToCaptureMs: number = 0
+  ): ControllerStateUpdate {
+    return {
+      stage,
+      guidanceStage: stage,
+      timeToCaptureMs,
+      countdownSeconds: null,
+      isReady,
+      shouldTriggerCapture,
+      statusMessage,
+      candidateToCaptureLatencyMs: latencyMs,
+    };
+  }
+
   public update(
     inputOrScore: CaptureReadiness | number,
     isPositionValid?: boolean,
     isAngleValid?: boolean,
     isMotionStable?: boolean,
     autoCaptureEnabled: boolean = true,
-    timestamp: number = Date.now()
+    now?: number
   ): ControllerStateUpdate {
+    const timestamp = now !== undefined ? now : Date.now();
+
     let rawScore: number;
     let posValid: boolean;
     let angValid: boolean;
@@ -82,168 +117,98 @@ export class HysteresisController {
       motionStable = readiness.temporalStabilityValid;
       isFullyReady = readiness.ready;
     }
-    // 1. Enforce Cooldown period post-capture
+
+    // 1. Shutter Cooldown Lockout
     if (this.lastCaptureTime > 0 && timestamp - this.lastCaptureTime < this.config.cooldownPeriodMs) {
       this.currentStage = 'COOLDOWN';
-      return {
-        stage: 'COOLDOWN',
-        countdownSeconds: null,
-        shouldTriggerCapture: false,
-        statusMessage: 'PHOTO CAPTURED',
-      };
+      return this.makeResult('COOLDOWN', false, false, 'CAPTURED ✓', 0, 0);
     }
 
     const passesEntry = isFullyReady && posValid && angValid && motionStable;
-    const passesExit = (isFullyReady || rawScore >= this.config.exitReadyScore) && posValid && angValid;
+    const passesExit = (isFullyReady || rawScore >= this.config.exitReadyScore) && posValid && angValid && motionStable;
 
-    // State machine transitions
-    switch (this.currentStage) {
-      case 'COOLDOWN':
-      case 'CAPTURED':
-        this.currentStage = 'SEARCHING';
+    if (passesEntry || (this.stabilityStartTime !== null && passesExit)) {
+      this.lastValidTime = timestamp;
+
+      if (!this.candidateStartTime) {
+        this.candidateStartTime = timestamp;
+        this.stabilityStartTime = timestamp;
+        this.currentStage = 'READY_CANDIDATE';
+        CapturePerformanceTracker.recordCandidateReady(timestamp);
+      } else {
+        this.currentStage = 'STABILITY_CONFIRMATION';
+      }
+
+      const elapsedMs = timestamp - (this.stabilityStartTime ?? timestamp);
+      this.candidateToCaptureLatencyMs = timestamp - this.candidateStartTime;
+      const remainingMs = Math.max(0, this.config.stabilityConfirmationMs - elapsedMs);
+
+      // 200–250ms Stability Confirmation complete!
+      if (elapsedMs >= this.config.stabilityConfirmationMs) {
+        this.currentStage = 'CAPTURED';
+        this.lastCaptureTime = timestamp;
+        const totalLatency = this.candidateToCaptureLatencyMs;
+
         this.candidateStartTime = null;
-        this.countdownValue = null;
-        break;
+        this.stabilityStartTime = null;
+        CapturePerformanceTracker.recordCaptureTriggered(timestamp);
 
-      case 'SEARCHING':
-      case 'ALIGNING':
-        if (passesEntry) {
-          this.currentStage = 'CANDIDATE_READY';
-          this.candidateStartTime = timestamp;
-          CapturePerformanceTracker.recordAlignmentValid(timestamp);
-        } else if (rawScore > 35) {
-          this.currentStage = 'ALIGNING';
-          CapturePerformanceTracker.resetAlignmentValid();
-        } else {
-          this.currentStage = 'SEARCHING';
-          CapturePerformanceTracker.resetAlignmentValid();
-        }
-        break;
+        return this.makeResult('CAPTURED', true, autoCaptureEnabled, 'READY ✓', totalLatency, 0);
+      }
 
-      case 'CANDIDATE_READY':
-        if (!passesExit) {
-          this.currentStage = 'ALIGNING';
-          this.candidateStartTime = null;
-          CapturePerformanceTracker.resetAlignmentValid();
-        } else if (
-          this.candidateStartTime &&
-          timestamp - this.candidateStartTime >= this.config.candidatePersistenceMs
-        ) {
-          // Stable long enough -> Enter READY
-          this.currentStage = 'READY';
-          this.lastValidReadyTime = timestamp;
-          CapturePerformanceTracker.recordCandidateReady(timestamp);
-
-          if (autoCaptureEnabled) {
-            this.currentStage = 'COUNTDOWN';
-            this.countdownStartTime = timestamp;
-            this.countdownValue = Math.max(1, Math.ceil(this.countdownDurationSec));
-            CapturePerformanceTracker.recordCountdownStarted(timestamp);
-          }
-        }
-        break;
-
-      case 'READY':
-        if (passesExit) {
-          this.lastValidReadyTime = timestamp;
-          if (autoCaptureEnabled) {
-            this.currentStage = 'COUNTDOWN';
-            this.countdownStartTime = timestamp;
-            this.countdownValue = Math.max(1, Math.ceil(this.countdownDurationSec));
-            CapturePerformanceTracker.recordCountdownStarted(timestamp);
-          }
-        } else if (timestamp - this.lastValidReadyTime > this.config.temporaryLossGraceMs) {
-          // Grace period expired
-          this.currentStage = 'ALIGNING';
-          CapturePerformanceTracker.resetAlignmentValid();
-        }
-        break;
-
-      case 'COUNTDOWN':
-        if (!posValid || !angValid) {
-          // Critical alignment lost (patient turned away / moved out of frame)
-          this.currentStage = 'ALIGNING';
-          this.countdownValue = null;
-          this.countdownStartTime = null;
-          CapturePerformanceTracker.resetAlignmentValid();
-          break;
-        }
-
-        // Check for hand tremor / sudden device motion: PAUSE countdown rather than cancel!
-        if (!motionStable) {
-          this.currentStage = 'PAUSED_MOTION';
-          break;
-        }
-
-        if (passesExit) {
-          this.lastValidReadyTime = timestamp;
-          if (this.countdownStartTime) {
-            const elapsed = (timestamp - this.countdownStartTime) / 1000;
-            const remaining = Math.max(0, Math.ceil(this.countdownDurationSec - elapsed));
-            this.countdownValue = remaining > 0 ? remaining : 1;
-
-            if (elapsed >= this.countdownDurationSec) {
-              // Trigger capture!
-              this.currentStage = 'CAPTURED';
-              this.lastCaptureTime = timestamp;
-              this.countdownValue = null;
-              this.countdownStartTime = null;
-              CapturePerformanceTracker.recordCaptureTriggered(timestamp);
-
-              return {
-                stage: 'CAPTURED',
-                countdownSeconds: null,
-                shouldTriggerCapture: true,
-                statusMessage: 'READY ✓',
-              };
-            }
-          }
-        } else if (timestamp - this.lastValidReadyTime > this.config.temporaryLossGraceMs) {
-          // Tracking lost longer than grace period -> return to aligning
-          this.currentStage = 'ALIGNING';
-          this.countdownValue = null;
-          this.countdownStartTime = null;
-          CapturePerformanceTracker.resetAlignmentValid();
-        }
-        break;
-
-      case 'PAUSED_MOTION':
-        if (isMotionStable && passesExit) {
-          // Motion subsided: resume countdown from current remaining time
-          this.currentStage = 'COUNTDOWN';
-          if (this.countdownValue !== null) {
-            this.countdownStartTime = timestamp - (this.countdownDurationSec - this.countdownValue) * 1000;
-          }
-        } else if (!passesExit && timestamp - this.lastValidReadyTime > this.config.temporaryLossGraceMs) {
-          this.currentStage = 'ALIGNING';
-          this.countdownValue = null;
-          this.countdownStartTime = null;
-          CapturePerformanceTracker.resetAlignmentValid();
-        }
-        break;
+      return this.makeResult(
+        this.currentStage,
+        true,
+        false,
+        'READY',
+        this.candidateToCaptureLatencyMs,
+        remainingMs
+      );
     }
 
-    let statusMessage = 'SEARCHING';
-    if (this.currentStage === 'COUNTDOWN' || this.currentStage === 'READY') {
-      statusMessage = 'READY ✓';
-    } else if (this.currentStage === 'PAUSED_MOTION') {
-      statusMessage = 'HOLD STEADY...';
-    } else if (this.currentStage === 'ALIGNING' || this.currentStage === 'CANDIDATE_READY') {
-      statusMessage = 'ALIGN PATIENT';
+    // Alignment temporarily invalid or jittered: apply debounce grace
+    if (this.stabilityStartTime !== null) {
+      const timeSinceValid = timestamp - this.lastValidTime;
+      if (timeSinceValid <= this.config.jitterDebounceGraceMs) {
+        // Absorbing single-frame sensor noise: hold stability progress
+        return this.makeResult(
+          this.currentStage,
+          true,
+          false,
+          'READY',
+          timestamp - (this.candidateStartTime ?? timestamp),
+          Math.max(0, this.config.stabilityConfirmationMs - (timestamp - this.stabilityStartTime))
+        );
+      }
     }
 
-    return {
-      stage: this.currentStage,
-      countdownSeconds: this.countdownValue,
-      shouldTriggerCapture: false,
-      statusMessage,
-    };
+    // Exceeded debounce grace: return to ALIGNING or SEARCHING
+    this.candidateStartTime = null;
+    this.stabilityStartTime = null;
+
+    if (rawScore > 35) {
+      this.currentStage = 'ALIGNING';
+      CapturePerformanceTracker.resetAlignmentValid();
+    } else {
+      this.currentStage = 'SEARCHING';
+      CapturePerformanceTracker.resetAlignmentValid();
+    }
+
+    return this.makeResult(
+      this.currentStage,
+      false,
+      false,
+      this.currentStage === 'ALIGNING' ? 'ALIGNING' : 'SEARCHING',
+      0,
+      0
+    );
   }
 
   public reset(): void {
     this.currentStage = 'SEARCHING';
     this.candidateStartTime = null;
-    this.countdownValue = null;
-    this.countdownStartTime = null;
+    this.stabilityStartTime = null;
+    this.lastValidTime = 0;
+    this.candidateToCaptureLatencyMs = 0;
   }
 }

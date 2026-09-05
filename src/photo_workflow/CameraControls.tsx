@@ -152,11 +152,11 @@ const CameraControlsComponent: React.FC<CameraControlsProps> = ({
               }`}
             />
 
-            {/* Countdown Overlay */}
-            {autoCaptureCountdown !== null && (
-              <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/85 backdrop-blur-sm">
-                <span className="font-mono font-extrabold text-2xl text-emerald-300 animate-ping">
-                  {autoCaptureCountdown}
+            {/* Instant Ready State */}
+            {isReady && (
+              <div className="absolute inset-0 flex items-center justify-center rounded-full bg-emerald-950/75 backdrop-blur-[2px]">
+                <span className="font-mono font-black text-xs tracking-wider text-emerald-200 uppercase drop-shadow-md">
+                  READY
                 </span>
               </div>
             )}
