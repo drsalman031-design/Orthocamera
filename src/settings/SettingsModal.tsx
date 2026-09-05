@@ -50,9 +50,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div className="bg-slate-900/80 border border-slate-800/90 rounded-2xl p-4 space-y-3 shadow-md">
             <div className="flex items-center justify-between">
               <div>
-                <span className="font-bold text-slate-100 text-sm block">Auto-Capture</span>
+                <span className="font-bold text-slate-100 text-sm block">Auto-Capture (3-Photo Burst)</span>
                 <p className="text-slate-400 text-[11px] leading-relaxed">
-                  Automatically triggers countdown when all alignment criteria (Position, Angle, Distance) are satisfied.
+                  Automatically triggers a rapid 3-photo burst countdown when alignment criteria are satisfied.
                 </p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer ml-3">
@@ -72,7 +72,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between">
                 <span className="text-slate-300 font-mono text-[11px]">Countdown Delay</span>
                 <div className="flex items-center gap-1.5">
-                  {[2, 3, 5].map((sec) => (
+                  {[0.5, 1, 2].map((sec) => (
                     <button
                       key={sec}
                       onClick={() =>

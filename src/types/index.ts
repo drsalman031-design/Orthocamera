@@ -224,6 +224,8 @@ export interface CapturedPhoto {
   width: number;
   height: number;
   manualOverride?: boolean;
+  burstIndex?: number; // 1, 2, 3 in rapid multi-shot burst
+  burstTotal?: number; // 3
 }
 
 export interface ClinicalCase {

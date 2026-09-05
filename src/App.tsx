@@ -26,7 +26,7 @@ import { Check, AlertCircle, Camera } from 'lucide-react';
 
 const DEFAULT_SETTINGS: AppSettings = {
   autoCaptureEnabled: true,
-  autoCaptureDelaySec: 2,
+  autoCaptureDelaySec: 0.6, // Ultra-responsive 0.6s countdown
   showClinicalGrid: false,
   showFaceMesh: true,
   showReferenceLabels: true,
@@ -229,8 +229,13 @@ export default function App() {
   };
 
   // When Photo is Captured: Direct Save to Phone Storage / Gallery / IndexedDB
+  // When Photo is Captured: Direct Save to Phone Storage / Gallery (with Rapid Burst Support)
   const handlePhotoCaptured = useCallback(
     (photo: CapturedPhoto) => {
+      const isBurst = typeof photo.burstIndex === 'number' && typeof photo.burstTotal === 'number';
+      const isFinalInBurst = !isBurst || photo.burstIndex === photo.burstTotal;
+      const burstSuffix = isBurst ? String(photo.burstIndex) : undefined;
+
       // 1. Immediately persist photo to active case in state and IndexedDB storage
       const updatedPhotos = {
         ...activeCase.photos,
@@ -244,29 +249,35 @@ export default function App() {
       setActiveCase(updatedCase);
       CaseStorage.saveCase(updatedCase);
 
-      // 2. Immediate audio & haptic confirmation feedback
+      // 2. Immediate audio & haptic confirmation feedback per shot
       playCaptureChime();
       CapturePerformanceTracker.recordCaptureFeedback();
 
       if (settings.hapticFeedback && typeof navigator !== 'undefined' && navigator.vibrate) {
-        navigator.vibrate([40, 60, 40]);
+        navigator.vibrate([30, 40, 30]);
       }
 
-      // 3. Trigger 800ms green confirmation border pulse
+      // 3. Trigger 200ms crisp shutter flash pulse
       setFlashGreenConfirmation(true);
-      setTimeout(() => setFlashGreenConfirmation(false), 800);
+      setTimeout(() => setFlashGreenConfirmation(false), 200);
 
-      // 4. Directly save photo to phone gallery (internal app database storage bypassed)
-      GalleryStorage.savePhotoToGallery(photo, activeCase, currentView).then((saveRes) => {
+      // 4. Directly save photo to phone gallery with burst suffix (_1, _2, _3)
+      GalleryStorage.savePhotoToGallery(photo, activeCase, currentView, {
+        suffix: burstSuffix,
+      }).then((saveRes) => {
         CapturePerformanceTracker.recordGallerySaveCompleted();
         if (saveRes.success && saveRes.method === 'gallery') {
           setGalleryToast({
-            message: 'Saved directly to Gallery',
+            message: isBurst
+              ? `Burst ${photo.burstIndex}/${photo.burstTotal} Saved`
+              : 'Saved directly to Gallery',
             filename: `${saveRes.filename} (Pictures/Orthocamera)`,
           });
         } else if (saveRes.success && saveRes.method === 'downloads') {
           setGalleryToast({
-            message: 'Saved directly to Downloads',
+            message: isBurst
+              ? `Burst ${photo.burstIndex}/${photo.burstTotal} Saved`
+              : 'Saved directly to Downloads',
             filename: saveRes.filename,
           });
         } else {
@@ -275,24 +286,26 @@ export default function App() {
             filename: saveRes.error || saveRes.filename,
           });
         }
-        setTimeout(() => setGalleryToast(null), 3500);
+        setTimeout(() => setGalleryToast(null), 3000);
       });
 
-      // 5. Hands-Free Auto Advance Workflow (Advance to next view, no zip modal)
-      if (settings.handsFreeAutoAdvance) {
-        const totalViews = ORTHODONTIC_VIEWS.length;
-        if (currentViewIndex < totalViews - 1) {
-          setCurrentViewIndex(currentViewIndex + 1);
+      // 5. Hands-Free Auto Advance Workflow (advances ONLY after the final burst shot)
+      if (isFinalInBurst) {
+        if (settings.handsFreeAutoAdvance) {
+          const totalViews = ORTHODONTIC_VIEWS.length;
+          if (currentViewIndex < totalViews - 1) {
+            setCurrentViewIndex(currentViewIndex + 1);
+          } else {
+            // All 11 photos complete
+            setGalleryToast({
+              message: 'All 11 Positions Captured!',
+              filename: 'Complete 3-photo burst sets in Pictures/Orthocamera',
+            });
+            setTimeout(() => setGalleryToast(null), 5000);
+          }
         } else {
-          // All 11 photos complete
-          setGalleryToast({
-            message: 'All 11 Photos Captured!',
-            filename: 'Complete set in Pictures/Orthocamera',
-          });
-          setTimeout(() => setGalleryToast(null), 5000);
+          setCapturedPhotoForReview(photo);
         }
-      } else {
-        setCapturedPhotoForReview(photo);
       }
     },
     [

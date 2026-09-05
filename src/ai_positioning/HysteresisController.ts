@@ -34,21 +34,21 @@ export class HysteresisController {
   private lastCaptureTime: number = 0;
   private countdownValue: number | null = null;
   private countdownStartTime: number | null = null;
-  private countdownDurationSec: number = 0.75;
+  private countdownDurationSec: number = 0.5;
 
   constructor(customConfig?: Partial<HysteresisConfig>) {
     this.config = {
       enterReadyScore: 85,
       exitReadyScore: 70,
-      candidatePersistenceMs: 250,
+      candidatePersistenceMs: 120,
       temporaryLossGraceMs: 200,
-      cooldownPeriodMs: 700,
+      cooldownPeriodMs: 600,
       ...customConfig,
     };
   }
 
   public setCountdownDuration(seconds: number) {
-    this.countdownDurationSec = Math.max(0.5, Math.min(5, seconds));
+    this.countdownDurationSec = Math.max(0.3, Math.min(5, seconds));
   }
 
   /**

@@ -518,62 +518,22 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
 
   const latestGuidanceRef = useRef<LiveGuidanceState | null>(null);
 
-  // Capture Full Resolution Photo Function with Synchronized Geometry
-  const capturePhoto = useCallback(async () => {
-    CapturePerformanceTracker.recordSensorCaptureStarted();
+  const isBurstCapturingRef = useRef<boolean>(false);
 
-    const video = videoRef.current;
-    const track = videoTrackRef.current;
-    const viewportW = containerRef.current?.clientWidth || window.innerWidth;
-    const viewportH = containerRef.current?.clientHeight || window.innerHeight;
+  // Capture Single Frame from Live Video Buffer with Sub-15ms Latency
+  const captureSingleFrame = useCallback(
+    (burstIndex: number = 1, burstTotal: number = 1): CapturedPhoto | null => {
+      const video = videoRef.current;
+      const viewportW = containerRef.current?.clientWidth || window.innerWidth;
+      const viewportH = containerRef.current?.clientHeight || window.innerHeight;
 
-    if (!video || video.readyState < 2 || video.videoWidth <= 0) {
-      console.warn('Cannot capture photo: video stream not ready');
-      return;
-    }
-
-    let capturedDataUrl = '';
-    let captureW = viewportW;
-    let captureH = viewportH;
-
-    // Check if ImageCapture API is natively available for full sensor raw capture
-    const imageCaptureConstructor = (window as unknown as { ImageCapture?: new (track: MediaStreamTrack) => { takePhoto: () => Promise<Blob> } }).ImageCapture;
-    let highResBlob: Blob | null = null;
-
-    if (imageCaptureConstructor && track && track.readyState === 'live') {
-      try {
-        const capturer = new imageCaptureConstructor(track);
-        highResBlob = await capturer.takePhoto();
-      } catch (e) {
-        console.debug('ImageCapture takePhoto fallback to video frame buffer:', e);
+      if (!video || video.readyState < 2 || video.videoWidth <= 0) {
+        console.warn('Cannot capture photo: video stream not ready');
+        return null;
       }
-    }
 
-    if (highResBlob) {
-      const img = new Image();
-      const blobUrl = URL.createObjectURL(highResBlob);
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error('Failed to decode sensor blob'));
-        img.src = blobUrl;
-      });
+      CapturePerformanceTracker.recordSensorCaptureStarted();
 
-      const croppedCanvas = CameraFrameTransform.cropToVisibleViewport(
-        img,
-        img.naturalWidth,
-        img.naturalHeight,
-        viewportW,
-        viewportH,
-        zoomLevel,
-        isHardwareZoom,
-        facingMode === 'user'
-      );
-
-      URL.revokeObjectURL(blobUrl);
-      captureW = croppedCanvas.width;
-      captureH = croppedCanvas.height;
-      capturedDataUrl = croppedCanvas.toDataURL('image/jpeg', 0.96);
-    } else {
       const croppedCanvas = CameraFrameTransform.cropToVisibleViewport(
         video,
         video.videoWidth,
@@ -585,14 +545,14 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
         facingMode === 'user'
       );
 
-      captureW = croppedCanvas.width;
-      captureH = croppedCanvas.height;
-      capturedDataUrl = croppedCanvas.toDataURL('image/jpeg', 0.95);
-    }
+      const captureW = croppedCanvas.width;
+      const captureH = croppedCanvas.height;
+      const capturedDataUrl = croppedCanvas.toDataURL('image/jpeg', 0.95);
 
-    CapturePerformanceTracker.recordSensorCaptureCompleted();
+      CapturePerformanceTracker.recordSensorCaptureCompleted();
 
-    if (capturedDataUrl) {
+      if (!capturedDataUrl) return null;
+
       // Rapid preliminary clinical quality check from live sensor readings
       const liveGuidance = latestGuidanceRef.current;
       const preliminaryQuality: QualityCheckResult = {
@@ -619,16 +579,18 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
       };
 
       const newPhoto: CapturedPhoto = {
-        id: `photo_${currentView.id}_${Date.now()}`,
+        id: `photo_${currentView.id}_${Date.now()}_${burstIndex}`,
         viewId: currentView.id,
         dataUrl: capturedDataUrl,
         timestamp: Date.now(),
         quality: preliminaryQuality,
         width: captureW,
         height: captureH,
+        burstIndex,
+        burstTotal,
       };
 
-      // Shutter response is instant - immediately dispatch photo to trigger UI feedback & workflow advance
+      // Shutter response is instant - immediately dispatch photo
       onPhotoCaptured(newPhoto);
 
       // Perform deeper pixel-level image quality analysis asynchronously in background
@@ -648,16 +610,41 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
           CapturePerformanceTracker.recordProcessingCompleted();
         }
       }, 0);
-    }
-  }, [currentView, facingMode, isHardwareZoom, onPhotoCaptured, zoomLevel]);
 
-  // Handle auto-capture trigger from parent
+      return newPhoto;
+    },
+    [currentView, facingMode, isHardwareZoom, onPhotoCaptured, zoomLevel]
+  );
+
+  // Rapid Multi-Shot Burst Capture Engine (Captures 3 photos swiftly for each position)
+  const captureBurst = useCallback(
+    async (count: number = 3, intervalMs: number = 130) => {
+      if (isBurstCapturingRef.current) return;
+      isBurstCapturingRef.current = true;
+
+      try {
+        for (let i = 1; i <= count; i++) {
+          captureSingleFrame(i, count);
+          if (i < count) {
+            await new Promise((resolve) => setTimeout(resolve, intervalMs));
+          }
+        }
+      } finally {
+        setTimeout(() => {
+          isBurstCapturingRef.current = false;
+        }, 300);
+      }
+    },
+    [captureSingleFrame]
+  );
+
+  // Handle auto-capture trigger from parent (fires rapid 3-shot burst)
   useEffect(() => {
     if (autoCaptureTrigger) {
-      capturePhoto();
+      captureBurst(3, 130);
       onAutoCaptureReset();
     }
-  }, [autoCaptureTrigger, capturePhoto, onAutoCaptureReset]);
+  }, [autoCaptureTrigger, captureBurst, onAutoCaptureReset]);
 
   // Sync props to refs to prevent effect recreation on re-renders
   const onGuidanceUpdateRef = useRef(onGuidanceUpdate);
