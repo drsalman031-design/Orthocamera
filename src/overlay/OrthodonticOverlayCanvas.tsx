@@ -999,18 +999,6 @@ const OrthodonticOverlayCanvasComponent: React.FC<OrthodonticOverlayProps> = ({
             </span>
           </div>
         )}
-
-        {isReady ? (
-          <div className="flex items-center gap-2 px-5 py-2 rounded-full bg-emerald-500/90 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/30 backdrop-blur-md animate-pulse">
-            <span className="w-2 h-2 rounded-full bg-white animate-ping" />
-            <span>READY — HOLD STILL</span>
-          </div>
-        ) : guidance.primaryMessage ? (
-          <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-950/90 border border-amber-500/50 text-amber-300 font-bold text-xs uppercase tracking-wide shadow-lg backdrop-blur-md">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-            <span>{guidance.primaryMessage}</span>
-          </div>
-        ) : null}
       </div>
     </div>
   );

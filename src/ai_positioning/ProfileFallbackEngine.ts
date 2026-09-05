@@ -36,11 +36,13 @@ export class ProfileFallbackEngine {
   public evaluateProfile(
     isRightProfile: boolean,
     currentResult: FaceAnalysisResult | null,
-    timestamp: number = Date.now()
+    timestamp: number = Date.now(),
+    captureMode: 'fast' | 'balanced' | 'clinical' = 'balanced'
   ): ProfileStateResult {
-    const minProfileYaw = 75; // Clinically calibrated 75° to 100° for lateral profile (rejects 70° oblique)
-    const maxProfileYaw = 100;
-    const maxRoll = 8;
+    // Fast mode allows 68°-110° yaw with 12° roll; Balanced/Clinical strictly enforces 75°-105° with 8° roll
+    const minProfileYaw = captureMode === 'fast' ? 68 : 75;
+    const maxProfileYaw = captureMode === 'fast' ? 110 : 105;
+    const maxRoll = captureMode === 'fast' ? 12 : 8;
 
     if (currentResult && currentResult.detected && currentResult.confidence >= 0.35) {
       const currentYaw = currentResult.yawDeg;

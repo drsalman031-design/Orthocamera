@@ -99,10 +99,26 @@ export const PhotoLightboxModal: React.FC<PhotoLightboxModalProps> = ({
             <button
               type="button"
               onClick={handleDownload}
-              className="flex-1 py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-2 active:scale-95 transition-all"
+              className="flex-1 py-3 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 active:scale-95 transition-all"
             >
               {downloaded ? <Check className="w-4 h-4 text-emerald-400" /> : <Download className="w-4 h-4 text-cyan-400" />}
               <span>{downloaded ? 'Downloaded!' : 'Download JPG'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (onOpenMobileGallery) {
+                  onOpenMobileGallery();
+                } else {
+                  GalleryStorage.openGallery();
+                }
+                onClose();
+              }}
+              className="py-3 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+              title="Open Mobile Gallery"
+            >
+              <ImageIcon className="w-4 h-4 text-emerald-400" />
+              <span>Mobile Gallery</span>
             </button>
             {photo.dataUrl && (
               <button
@@ -113,7 +129,7 @@ export const PhotoLightboxModal: React.FC<PhotoLightboxModalProps> = ({
                     newTab.document.write(`<img src="${photo.dataUrl}" style="max-width:100%; height:auto;" />`);
                   }
                 }}
-                className="py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs font-semibold flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                className="py-3 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs font-semibold flex items-center justify-center gap-1.5 active:scale-95 transition-all"
                 title="Open in new browser tab"
               >
                 <ExternalLink className="w-4 h-4" />

@@ -26,6 +26,7 @@ export interface CameraTelemetry {
 interface CameraManagerProps {
   currentView: OrthodonticViewDefinition;
   guidanceSensitivity: 'high' | 'medium' | 'relaxed';
+  captureMode?: 'fast' | 'balanced' | 'clinical';
   onGuidanceUpdate: (guidance: LiveGuidanceState) => void;
   onPhotoCaptured: (photo: CapturedPhoto) => void;
   autoCaptureTrigger: boolean;
@@ -145,6 +146,7 @@ function mirrorFaceResult(result: FaceAnalysisResult): FaceAnalysisResult {
 const CameraManagerComponent: React.FC<CameraManagerProps> = ({
   currentView,
   guidanceSensitivity,
+  captureMode = 'balanced',
   onGuidanceUpdate,
   onPhotoCaptured,
   autoCaptureTrigger,
@@ -684,6 +686,9 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
   const guidanceSensitivityRef = useRef(guidanceSensitivity);
   guidanceSensitivityRef.current = guidanceSensitivity;
 
+  const captureModeRef = useRef(captureMode);
+  captureModeRef.current = captureMode;
+
   const zoomLevelRef = useRef(zoomLevel);
   zoomLevelRef.current = zoomLevel;
 
@@ -727,20 +732,20 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
         lastFpsCalcTimeRef.current = timestamp;
       }
 
-      // Adaptive Cadence Scheduler:
-      // SEARCHING: ~4 FPS (250ms) -> Maximizes GPU/CPU cooldown when subject is not in frame
-      // ALIGNING: ~6 FPS (166ms) -> Smooth, responsive guidance with low thermal load
-      // READY_CANDIDATE: ~8 FPS (125ms) -> Tighter tracking as alignment enters target zone
-      // STABILITY_CONFIRMATION: ~10 FPS (100ms) -> High-frequency verification during 220ms confirmation window
+      // Responsive Adaptive Cadence Scheduler:
+      // SEARCHING: ~8 FPS (120ms) -> Quick face detection without burning idle CPU
+      // ALIGNING: ~15 FPS (66ms) -> Fluid real-time feedback while patient moves
+      // READY_CANDIDATE: ~20 FPS (50ms) -> Tight alignment tracking
+      // STABILITY_CONFIRMATION: ~25 FPS (40ms) -> High-frequency verification during stability window
       const stage = latestGuidanceRef.current?.guidanceStage || 'SEARCHING';
       const cadenceIntervalMs =
         stage === 'SEARCHING'
-          ? 250
+          ? 120
           : stage === 'ALIGNING'
-          ? 166
+          ? 66
           : stage === 'READY_CANDIDATE'
-          ? 125
-          : 100;
+          ? 50
+          : 40;
 
       if (timestamp - lastAnalysisTime >= cadenceIntervalMs) {
         // Enforce single active inference execution lock - zero queuing, skip frame if previous inference is still active
@@ -822,7 +827,7 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
                 // Lateral Profile Evaluation (state machine tracks 90° lateral pose and capture eligibility)
                 if (activeView.id === 'RIGHT_PROFILE' || activeView.id === 'LEFT_PROFILE') {
                   const isRight = activeView.id === 'RIGHT_PROFILE';
-                  profileState = profileFallbackRef.current.evaluateProfile(isRight, faceRes);
+                  profileState = profileFallbackRef.current.evaluateProfile(isRight, faceRes, Date.now(), captureMode);
                 }
               } else {
                 intraRes = intraoralAnalyzerRef.current.analyzeIntraoralFrame(
@@ -847,6 +852,7 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
                 motionScore: motionRes.motionScore,
                 isStable: motionRes.isStable,
                 sensitivity: guidanceSensitivityRef.current,
+                captureMode: captureModeRef.current,
               });
 
               // Preserve current guidanceStage from previous state machine step if available
@@ -983,32 +989,7 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
         }}
       />
 
-      {/* 2. DroidCam Status Indicator & Camera Source Switcher */}
-      <div className="absolute top-28 left-4 right-4 z-25 flex items-center justify-between pointer-events-none">
-        {/droid|phone|source\s*2/i.test(activeDeviceLabel) ? (
-          <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-950/85 border border-emerald-400/50 rounded-full text-emerald-300 text-[11px] font-mono shadow-xl backdrop-blur-md animate-fade-in pointer-events-auto">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#34d399]" />
-            <span className="font-semibold tracking-wide">DroidCam Connected ✓</span>
-          </div>
-        ) : (
-          <div />
-        )}
 
-        {availableCameras.length > 1 && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleCycleCamera();
-            }}
-            className="flex items-center gap-1.5 px-3 py-1 bg-black/75 hover:bg-black/90 active:scale-95 border border-white/20 hover:border-cyan-400 rounded-full text-white text-[11px] font-mono shadow-xl backdrop-blur-md cursor-pointer transition-all pointer-events-auto"
-            title="Click to toggle between available cameras (e.g. DroidCam vs Laptop Webcam)"
-          >
-            <Camera className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="max-w-[130px] truncate">{activeDeviceLabel || 'Switch Camera'}</span>
-          </button>
-        )}
-      </div>
 
       {/* 3. Tap-to-Focus Reticle Indicator */}
       {focusPoint && (

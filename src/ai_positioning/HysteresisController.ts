@@ -1,5 +1,6 @@
 import { CaptureReadiness } from '../types';
 import { CapturePerformanceTracker } from '../telemetry/CapturePerformanceTracker';
+import { CaptureMode, getCaptureModeConfig } from './CaptureConfig';
 
 export type GuidanceStateStage =
   | 'SEARCHING'
@@ -11,11 +12,11 @@ export type GuidanceStateStage =
   | 'COOLDOWN';
 
 export interface HysteresisConfig {
-  enterReadyScore: number; // 80
-  exitReadyScore: number; // 70
-  stabilityConfirmationMs: number; // 220ms (clinically validated 200–250ms)
-  jitterDebounceGraceMs: number; // 50ms buffer to absorb single-frame sensor noise
-  cooldownPeriodMs: number; // 500ms post-capture shutter lockout
+  enterReadyScore: number; // 60 (Fast), 70 (Balanced), 80 (Clinical)
+  exitReadyScore: number; // 50 (Fast), 60 (Balanced), 70 (Clinical)
+  stabilityConfirmationMs: number; // 120ms - 250ms
+  jitterDebounceGraceMs: number; // 50ms - 90ms buffer to absorb single-frame sensor noise
+  cooldownPeriodMs: number; // 400ms post-capture shutter lockout
 }
 
 export interface ControllerStateUpdate {
@@ -40,17 +41,25 @@ export class HysteresisController {
 
   constructor(customConfig?: Partial<HysteresisConfig>) {
     this.config = {
-      enterReadyScore: 80,
-      exitReadyScore: 70,
-      stabilityConfirmationMs: 220, // 200–250 ms target
-      jitterDebounceGraceMs: 50, // Debounce single-frame drop
-      cooldownPeriodMs: 500,
+      enterReadyScore: 70,
+      exitReadyScore: 60,
+      stabilityConfirmationMs: 180, // Default Balanced target
+      jitterDebounceGraceMs: 70, // Debounce single-frame drop
+      cooldownPeriodMs: 400,
       ...customConfig,
     };
   }
 
+  public setCaptureMode(mode: CaptureMode): void {
+    const modeConfig = getCaptureModeConfig(mode);
+    this.config.enterReadyScore = modeConfig.enterReadyScore;
+    this.config.exitReadyScore = modeConfig.exitReadyScore;
+    this.config.stabilityConfirmationMs = modeConfig.stabilityConfirmationMs;
+    this.config.jitterDebounceGraceMs = modeConfig.jitterDebounceGraceMs;
+  }
+
   public setStabilityDurationMs(ms: number): void {
-    this.config.stabilityConfirmationMs = Math.max(150, Math.min(500, ms));
+    this.config.stabilityConfirmationMs = Math.max(80, Math.min(600, ms));
   }
 
   public setStabilityConfirmationDuration(ms: number): void {
@@ -59,7 +68,7 @@ export class HysteresisController {
 
   public setCountdownDuration(seconds: number): void {
     // Adapter for legacy settings call
-    this.config.stabilityConfirmationMs = Math.max(180, Math.min(450, Math.round(seconds * 350)));
+    this.config.stabilityConfirmationMs = Math.max(100, Math.min(450, Math.round(seconds * 300)));
   }
 
   public getStage(): GuidanceStateStage {
@@ -69,7 +78,6 @@ export class HysteresisController {
   public getCandidateToCaptureLatencyMs(): number {
     return this.candidateToCaptureLatencyMs;
   }
-
 
   private makeResult(
     stage: GuidanceStateStage,
@@ -147,7 +155,7 @@ export class HysteresisController {
       this.candidateToCaptureLatencyMs = timestamp - this.candidateStartTime;
       const remainingMs = Math.max(0, this.config.stabilityConfirmationMs - elapsedMs);
 
-      // 200–250ms Stability Confirmation complete!
+      // Stability Confirmation complete!
       if (elapsedMs >= this.config.stabilityConfirmationMs) {
         this.currentStage = 'CAPTURED';
         this.lastCaptureTime = timestamp;
@@ -190,7 +198,7 @@ export class HysteresisController {
     this.candidateStartTime = null;
     this.stabilityStartTime = null;
 
-    if (rawScore > 35) {
+    if (rawScore > Math.min(35, this.config.enterReadyScore * 0.5)) {
       this.currentStage = 'ALIGNING';
       CapturePerformanceTracker.resetAlignmentValid();
     } else {

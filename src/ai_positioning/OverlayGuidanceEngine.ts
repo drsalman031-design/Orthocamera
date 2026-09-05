@@ -11,6 +11,7 @@ import { FaceAnalysisResult } from './FaceAnalyzer';
 import { IntraoralAnalysisResult } from './IntraoralAnalyzer';
 import { ProfileStateResult } from './ProfileFallbackEngine';
 import { ClinicalAlignmentEngine } from './ClinicalAlignmentEngine';
+import { CaptureMode } from './CaptureConfig';
 
 export interface GuidanceEvaluationInput {
   view: OrthodonticViewDefinition;
@@ -22,6 +23,7 @@ export interface GuidanceEvaluationInput {
   motionScore?: number;
   isStable?: boolean;
   sensitivity?: 'high' | 'medium' | 'relaxed';
+  captureMode?: CaptureMode;
 }
 
 export class OverlayGuidanceEngine {
@@ -77,6 +79,7 @@ export class OverlayGuidanceEngine {
         faceResult,
         currentView: view,
         sensitivity,
+        captureMode: input.captureMode,
         profileState: input.profileState,
         motionScore,
         isStable,
@@ -84,7 +87,7 @@ export class OverlayGuidanceEngine {
         rawSharpness,
       });
 
-      if (!faceResult || !faceResult.detected || faceResult.confidence < 0.3) {
+      if (!faceResult || !faceResult.detected || faceResult.confidence < 0.25) {
         const readiness: CaptureReadiness = {
           ready: false,
           score: 0,
@@ -102,6 +105,8 @@ export class OverlayGuidanceEngine {
           temporalStabilityValid,
           highestPriorityCorrection: alignRes.correction.message,
           reasons: ['FACE_NOT_DETECTED'],
+          rejectionReason: 'Face not detected in guide',
+          blockingFactors: ['FACE_NOT_DETECTED'],
           confidence: 0,
         };
 
@@ -112,6 +117,9 @@ export class OverlayGuidanceEngine {
           alignmentCorrection: alignRes.correction,
           primaryMessage: alignRes.correction.message,
           highestPriorityCorrection: alignRes.correction.message,
+          rejectionReason: 'Face not detected in guide',
+          blockingFactors: ['FACE_NOT_DETECTED'],
+          captureMode: input.captureMode,
           statusType: 'searching',
           positionValid: false,
           positionMessage: 'Face not detected',
@@ -198,6 +206,8 @@ export class OverlayGuidanceEngine {
         temporalStabilityValid,
         highestPriorityCorrection: alignRes.correction.message,
         reasons: alignRes.reasons,
+        rejectionReason: alignRes.rejectionReason,
+        blockingFactors: alignRes.blockingFactors,
         confidence: (pose.confidence + landmarkQuality.confidence) / 2,
       };
 
@@ -208,6 +218,9 @@ export class OverlayGuidanceEngine {
         alignmentCorrection: alignRes.correction,
         primaryMessage: alignRes.ready ? 'READY — HOLD STILL' : alignRes.correction.message,
         highestPriorityCorrection: alignRes.correction.message,
+        rejectionReason: alignRes.rejectionReason,
+        blockingFactors: alignRes.blockingFactors,
+        captureMode: input.captureMode,
         statusType: alignRes.ready ? 'ready' : 'adjust',
         positionValid,
         positionMessage,
@@ -361,6 +374,10 @@ export class OverlayGuidanceEngine {
     const frameSizeMessage = frameSizeValid ? 'FRAME SIZE ✓' : (intra.archCoverageRatio < 0.55 ? 'MOVE CLOSER' : 'MOVE BACK');
     const stabilityMessage = stabilityValid ? 'STABILITY ✓' : 'HOLD STILL';
 
+    const rejectionReason = allValid
+      ? undefined
+      : highestPriorityCorrection.toLowerCase().replace(/_/g, ' ');
+
     const readiness: CaptureReadiness = {
       ready: allValid,
       score,
@@ -378,6 +395,8 @@ export class OverlayGuidanceEngine {
       temporalStabilityValid,
       highestPriorityCorrection,
       reasons,
+      rejectionReason,
+      blockingFactors: reasons,
       confidence: intra.confidence,
     };
 
@@ -386,6 +405,9 @@ export class OverlayGuidanceEngine {
       readyScore: score,
       primaryMessage,
       highestPriorityCorrection,
+      rejectionReason,
+      blockingFactors: reasons,
+      captureMode: input.captureMode,
       statusType: allValid ? 'ready' : 'adjust',
       positionValid: midlineValid,
       positionMessage,

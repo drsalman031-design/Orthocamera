@@ -4,6 +4,7 @@ import {
 } from '../types';
 import { FaceAnalysisResult } from './FaceAnalyzer';
 import { ProfileStateResult } from './ProfileFallbackEngine';
+import { CaptureMode, getCaptureModeConfig } from './CaptureConfig';
 
 export interface ClinicalAlignmentCorrection {
   direction:
@@ -54,6 +55,8 @@ export interface ClinicalAlignmentResult {
   correction: ClinicalAlignmentCorrection;
   breakdown: AlignmentScoreBreakdown;
   reasons: string[];
+  rejectionReason?: string;
+  blockingFactors?: string[];
 }
 
 export interface ClinicalAlignmentInput {
@@ -62,6 +65,7 @@ export interface ClinicalAlignmentInput {
   frameWidth?: number;
   frameHeight?: number;
   sensitivity?: 'high' | 'medium' | 'relaxed';
+  captureMode?: CaptureMode;
   profileState?: ProfileStateResult | null;
   motionScore?: number;
   isStable?: boolean;
@@ -71,14 +75,16 @@ export interface ClinicalAlignmentInput {
 
 export class ClinicalAlignmentEngine {
   /**
-   * Evaluates extraoral face landmark geometry strictly using MediaPipe as the single source of truth.
-   * Returns continuous alignment scoring, exact geometric deviations, and prioritized clinical guidance.
+   * Evaluates extraoral face landmark geometry using MediaPipe or qualified fallbacks.
+   * Returns continuous alignment scoring, exact geometric deviations, prioritized clinical guidance,
+   * and explicit rejection reasons based on active CaptureMode (Fast, Balanced, Clinical).
    */
   public static evaluate(input: ClinicalAlignmentInput): ClinicalAlignmentResult {
     const {
       faceResult,
       currentView,
       sensitivity = 'medium',
+      captureMode = 'balanced',
       profileState,
       motionScore = 0,
       isStable = false,
@@ -86,8 +92,10 @@ export class ClinicalAlignmentEngine {
       rawSharpness = 85,
     } = input;
 
-    // View-specific target specifications
-    const spec: ViewCaptureSpec = currentView.captureSpec || {
+    const modeConfig = getCaptureModeConfig(captureMode);
+
+    // View-specific target specifications with mode tolerance multipliers
+    const baseSpec: ViewCaptureSpec = currentView.captureSpec || {
       targetYawDeg: 0,
       yawToleranceDeg: sensitivity === 'high' ? 5 : sensitivity === 'relaxed' ? 10 : 7,
       targetPitchDeg: 0,
@@ -107,6 +115,16 @@ export class ClinicalAlignmentEngine {
         currentView.id === 'LEFT_OBLIQUE',
       minSmileScore: 0.25,
       requiresFaceLandmarks: true,
+    };
+
+    const spec: ViewCaptureSpec = {
+      ...baseSpec,
+      centerToleranceX: baseSpec.centerToleranceX * modeConfig.centerToleranceMultiplier,
+      centerToleranceY: baseSpec.centerToleranceY * modeConfig.centerToleranceMultiplier,
+      yawToleranceDeg: baseSpec.yawToleranceDeg * modeConfig.angleToleranceMultiplier,
+      pitchToleranceDeg: baseSpec.pitchToleranceDeg * modeConfig.angleToleranceMultiplier,
+      rollToleranceDeg: baseSpec.rollToleranceDeg * modeConfig.angleToleranceMultiplier,
+      minSmileScore: Math.min(baseSpec.minSmileScore ?? 0.25, modeConfig.minSmileScore),
     };
 
     // Fail-closed baseline when face is not detected
@@ -140,12 +158,19 @@ export class ClinicalAlignmentEngine {
           expressionScore: 0,
         },
         reasons: ['FACE_NOT_DETECTED'],
+        rejectionReason: 'Face not detected in guide',
+        blockingFactors: ['FACE_NOT_DETECTED'],
       };
     }
 
-    // 1. Strict MediaPipe Engine Gating
+    // 1. Engine & Fallback Check
     const isMediaPipe = faceResult.aiEngine === 'mediapipe';
     const isProfileView = currentView.id === 'RIGHT_PROFILE' || currentView.id === 'LEFT_PROFILE';
+
+    const isFallbackAcceptable =
+      !isMediaPipe &&
+      modeConfig.allowFallbackDetectorCapture &&
+      faceResult.confidence >= modeConfig.minFallbackConfidence;
 
     // 2. Anatomical Landmark Check (profile views naturally occlude contralateral eye)
     const hasRequiredPoints = isProfileView
@@ -165,13 +190,13 @@ export class ClinicalAlignmentEngine {
         );
 
     const lq = faceResult.landmarkQuality;
-    const landmarksValid =
-      isMediaPipe &&
-      !!lq &&
-      lq.available &&
-      (isProfileView || lq.requiredLandmarksPresent) &&
-      hasRequiredPoints &&
-      lq.confidence >= (isProfileView ? 0.35 : spec.minLandmarkConfidence);
+    const landmarksValid = isMediaPipe
+      ? !!lq &&
+        lq.available &&
+        (isProfileView || lq.requiredLandmarksPresent) &&
+        hasRequiredPoints &&
+        lq.confidence >= (isProfileView ? 0.35 : spec.minLandmarkConfidence)
+      : false;
 
     // 3. Head Pose Extraction Validation
     const pose = faceResult.pose;
@@ -182,7 +207,9 @@ export class ClinicalAlignmentEngine {
       pose.pitchDeg !== null &&
       pose.rollDeg !== null;
 
-    const poseValid = isMediaPipe && isPoseAvailable && (pose?.confidence ?? 0) >= spec.minPoseConfidence;
+    const poseValid = isMediaPipe
+      ? isPoseAvailable && (pose?.confidence ?? 0) >= spec.minPoseConfidence
+      : false;
 
     // 4. Centering Geometry
     const targetCenterX = 0.5;
@@ -195,14 +222,16 @@ export class ClinicalAlignmentEngine {
 
     // 5. Distance / Face Coverage Geometry
     const faceRatio = faceResult.faceHeightRatio;
-    const targetRatio = (spec.minFaceHeightRatio + spec.maxFaceHeightRatio) / 2;
+    const minFaceRatio = Math.max(0.12, spec.minFaceHeightRatio / modeConfig.distanceToleranceMultiplier);
+    const maxFaceRatio = Math.min(0.95, spec.maxFaceHeightRatio * modeConfig.distanceToleranceMultiplier);
+    const targetRatio = (minFaceRatio + maxFaceRatio) / 2;
     const distanceError =
-      faceRatio < spec.minFaceHeightRatio
-        ? spec.minFaceHeightRatio - faceRatio
-        : faceRatio > spec.maxFaceHeightRatio
-        ? faceRatio - spec.maxFaceHeightRatio
+      faceRatio < minFaceRatio
+        ? minFaceRatio - faceRatio
+        : faceRatio > maxFaceRatio
+        ? faceRatio - maxFaceRatio
         : 0;
-    const distanceValid = faceRatio >= spec.minFaceHeightRatio && faceRatio <= spec.maxFaceHeightRatio;
+    const distanceValid = faceRatio >= minFaceRatio && faceRatio <= maxFaceRatio;
 
     // 6. Angular Errors
     const yaw = faceResult.yawDeg;
@@ -221,18 +250,22 @@ export class ClinicalAlignmentEngine {
     // Lateral Profile View Specific Enforcements
     if (isProfileView) {
       if (profileState) {
-        angleValid = profileState.isProfileAligned;
+        angleValid = profileState.isProfileAligned || (captureMode === 'fast' && profileState.state === 'TRACKING');
       } else {
+        const minProfileAngle = captureMode === 'fast' ? 65 : captureMode === 'balanced' ? 70 : 75;
+        const maxProfileAngle = captureMode === 'fast' ? 105 : 100;
+        const maxProfileRoll = captureMode === 'fast' ? 12 : 8;
+
         if (currentView.id === 'RIGHT_PROFILE') {
-          if (yaw < 68 || yaw > 100) {
+          if (yaw < minProfileAngle || yaw > maxProfileAngle) {
             angleValid = false;
           }
         } else {
-          if (yaw > -68 || yaw < -100) {
+          if (yaw > -minProfileAngle || yaw < -maxProfileAngle) {
             angleValid = false;
           }
         }
-        if (Math.abs(roll) > 8) {
+        if (Math.abs(roll) > maxProfileRoll) {
           angleValid = false;
         }
       }
@@ -248,9 +281,9 @@ export class ClinicalAlignmentEngine {
     }
 
     // 8. Quality & Stability
-    const exposureValid = rawLuminance >= 35 && rawLuminance <= 240;
-    const sharpnessValid = rawSharpness >= 18;
-    const stabilityValid = isStable && motionScore < 22;
+    const exposureValid = rawLuminance >= modeConfig.minLuminance && rawLuminance <= modeConfig.maxLuminance;
+    const sharpnessValid = rawSharpness >= modeConfig.minSharpness;
+    const stabilityValid = isStable && motionScore < modeConfig.maxMotionScore;
 
     // --- CONTINUOUS ALIGNMENT SCORE CALCULATION (0 - 100) ---
     const centerNorm = Math.hypot(centerErrorX, centerErrorY) / spec.centerToleranceX;
@@ -265,11 +298,11 @@ export class ClinicalAlignmentEngine {
     const rollNorm = rollErrorDeg / (spec.rollToleranceDeg * 1.5);
     const rollScore = Math.max(0, Math.min(15, (1 - Math.min(1, rollNorm)) * 15));
 
-    const distSpan = spec.maxFaceHeightRatio - spec.minFaceHeightRatio;
+    const distSpan = maxFaceRatio - minFaceRatio;
     const distNorm = Math.abs(faceRatio - targetRatio) / (distSpan / 2);
     const distanceScore = Math.max(0, Math.min(10, (1 - Math.min(1, distNorm)) * 10));
 
-    const landmarkScore = isMediaPipe && lq ? Math.round(lq.confidence * 10) : 0;
+    const landmarkScore = isMediaPipe && lq ? Math.round(lq.confidence * 10) : (isFallbackAcceptable ? 8 : 0);
     const stabilityScore = stabilityValid ? 5 : 0;
     const expressionScore = expressionValid ? 5 : 0;
 
@@ -283,18 +316,18 @@ export class ClinicalAlignmentEngine {
       stabilityScore +
       expressionScore;
 
-    // Cap score if non-MediaPipe fallback or missing critical data
-    if (!isMediaPipe || !landmarksValid || !poseValid) {
+    // Cap score if unsupported non-MediaPipe fallback or missing critical data
+    const engineEligible = isMediaPipe || isFallbackAcceptable;
+    if (!engineEligible || (!isFallbackAcceptable && (!landmarksValid || !poseValid))) {
       rawTotalScore = Math.min(25, rawTotalScore);
     }
 
     const alignmentScore = Math.max(0, Math.min(100, Math.round(rawTotalScore)));
 
-    // --- STRICT CAPTURE GATE ---
+    // --- CAPTURE GATE (Mode-adaptive threshold) ---
     const allCriteriaMet =
-      isMediaPipe &&
-      landmarksValid &&
-      poseValid &&
+      engineEligible &&
+      (isMediaPipe ? (landmarksValid && poseValid) : isFallbackAcceptable) &&
       positionValid &&
       distanceValid &&
       angleValid &&
@@ -302,31 +335,39 @@ export class ClinicalAlignmentEngine {
       sharpnessValid &&
       exposureValid &&
       stabilityValid &&
-      alignmentScore >= 80;
+      alignmentScore >= modeConfig.enterReadyScore;
 
-    // --- SINGLE HIGHEST-PRIORITY CORRECTION DETERMINATION ---
+    // --- SINGLE HIGHEST-PRIORITY CORRECTION & REJECTION REASON DETERMINATION ---
     const reasons: string[] = [];
+    const blockingFactors: string[] = [];
     let correction: ClinicalAlignmentCorrection;
+    let rejectionReason: string | undefined = undefined;
 
-    if (!isMediaPipe || !landmarksValid) {
+    if (!engineEligible || (!isFallbackAcceptable && !landmarksValid)) {
       reasons.push('LANDMARKS_UNRELIABLE');
+      blockingFactors.push('LANDMARKS_UNRELIABLE');
+      rejectionReason = 'Clarify face in guide / adjust lighting';
       correction = {
         direction: 'HOLD_STILL',
         magnitude: 0.8,
         message: 'Clarify facial landmarks / Adjust lighting',
       };
-    } else if (!poseValid) {
+    } else if (!isFallbackAcceptable && !poseValid) {
       reasons.push('POSE_UNRELIABLE');
+      blockingFactors.push('POSE_UNRELIABLE');
+      rejectionReason = 'Face camera directly';
       correction = {
         direction: 'HOLD_STILL',
         magnitude: 0.8,
         message: 'Head pose uncertain / Face camera',
       };
     } else if (!positionValid) {
+      blockingFactors.push('OFF_CENTER');
       if (Math.abs(centerErrorX) > spec.centerToleranceX) {
         const pct = Math.max(1, Math.round(Math.abs(centerErrorX) * 100));
         if (centerErrorX < 0) {
           reasons.push('ALIGN_FACE_RIGHT');
+          rejectionReason = `Move face right ${pct}%`;
           correction = {
             direction: 'RIGHT',
             magnitude: Math.abs(centerErrorX),
@@ -334,6 +375,7 @@ export class ClinicalAlignmentEngine {
           };
         } else {
           reasons.push('ALIGN_FACE_LEFT');
+          rejectionReason = `Move face left ${pct}%`;
           correction = {
             direction: 'LEFT',
             magnitude: Math.abs(centerErrorX),
@@ -344,6 +386,7 @@ export class ClinicalAlignmentEngine {
         const pct = Math.max(1, Math.round(Math.abs(centerErrorY) * 100));
         if (centerErrorY < 0) {
           reasons.push('ALIGN_FACE_DOWN');
+          rejectionReason = `Move face down ${pct}%`;
           correction = {
             direction: 'DOWN',
             magnitude: Math.abs(centerErrorY),
@@ -351,6 +394,7 @@ export class ClinicalAlignmentEngine {
           };
         } else {
           reasons.push('ALIGN_FACE_UP');
+          rejectionReason = `Move face up ${pct}%`;
           correction = {
             direction: 'UP',
             magnitude: Math.abs(centerErrorY),
@@ -359,35 +403,42 @@ export class ClinicalAlignmentEngine {
         }
       }
     } else if (!distanceValid) {
-      if (faceRatio < spec.minFaceHeightRatio) {
+      blockingFactors.push('DISTANCE_MISMATCH');
+      if (faceRatio < minFaceRatio) {
         reasons.push('MOVE_CLOSER');
+        rejectionReason = 'Move camera closer';
         correction = {
           direction: 'MOVE_CLOSER',
-          magnitude: spec.minFaceHeightRatio - faceRatio,
+          magnitude: minFaceRatio - faceRatio,
           message: 'MOVE CLOSER',
         };
       } else {
         reasons.push('MOVE_BACK');
+        rejectionReason = 'Move camera back';
         correction = {
           direction: 'MOVE_BACK',
-          magnitude: faceRatio - spec.maxFaceHeightRatio,
+          magnitude: faceRatio - maxFaceRatio,
           message: 'MOVE BACK',
         };
       }
     } else if (rollErrorDeg > spec.rollToleranceDeg) {
       const rollDeg = Math.max(1, Math.round(rollErrorDeg));
       reasons.push('LEVEL_HEAD');
+      blockingFactors.push('HEAD_TILTED');
+      rejectionReason = `Level head ${rollDeg}°`;
       correction = {
         direction: roll > spec.targetRollDeg ? 'ROTATE_LEFT' : 'ROTATE_RIGHT',
         magnitude: rollErrorDeg,
         message: `LEVEL HEAD ${rollDeg}°`,
       };
     } else if (yawErrorDeg > spec.yawToleranceDeg || (isProfileView && !angleValid)) {
+      blockingFactors.push('ANGLE_MISMATCH');
       if (isProfileView) {
         if (currentView.id === 'RIGHT_PROFILE') {
           if (yaw < 82) {
             const deg = Math.max(1, Math.round(90 - yaw));
             reasons.push('TURN_PATIENT_RIGHT');
+            rejectionReason = `Turn patient right ${deg}° (target 90°)`;
             correction = {
               direction: 'RIGHT',
               magnitude: 90 - yaw,
@@ -396,6 +447,7 @@ export class ClinicalAlignmentEngine {
           } else {
             const deg = Math.max(1, Math.round(yaw - 90));
             reasons.push('TURN_PATIENT_LEFT');
+            rejectionReason = `Turn patient left ${deg}° (target 90°)`;
             correction = {
               direction: 'LEFT',
               magnitude: yaw - 90,
@@ -407,6 +459,7 @@ export class ClinicalAlignmentEngine {
           if (yaw > -82) {
             const deg = Math.max(1, Math.round(yaw + 90));
             reasons.push('TURN_PATIENT_LEFT');
+            rejectionReason = `Turn patient left ${deg}° (target 90°)`;
             correction = {
               direction: 'LEFT',
               magnitude: yaw + 90,
@@ -415,6 +468,7 @@ export class ClinicalAlignmentEngine {
           } else {
             const deg = Math.max(1, Math.round(-90 - yaw));
             reasons.push('TURN_PATIENT_RIGHT');
+            rejectionReason = `Turn patient right ${deg}° (target 90°)`;
             correction = {
               direction: 'RIGHT',
               magnitude: -90 - yaw,
@@ -426,6 +480,7 @@ export class ClinicalAlignmentEngine {
         const yawDeg = Math.max(1, Math.round(yawErrorDeg));
         if (yaw > spec.targetYawDeg) {
           reasons.push('TURN_HEAD_LEFT');
+          rejectionReason = `Turn head left ${yawDeg}°`;
           correction = {
             direction: 'LEFT',
             magnitude: yawErrorDeg,
@@ -433,6 +488,7 @@ export class ClinicalAlignmentEngine {
           };
         } else {
           reasons.push('TURN_HEAD_RIGHT');
+          rejectionReason = `Turn head right ${yawDeg}°`;
           correction = {
             direction: 'RIGHT',
             magnitude: yawErrorDeg,
@@ -442,8 +498,10 @@ export class ClinicalAlignmentEngine {
       }
     } else if (pitchErrorDeg > spec.pitchToleranceDeg) {
       const pitchDeg = Math.max(1, Math.round(pitchErrorDeg));
+      blockingFactors.push('CHIN_TILTED');
       if (pitch > spec.targetPitchDeg) {
         reasons.push('LOWER_CHIN');
+        rejectionReason = `Lower chin ${pitchDeg}°`;
         correction = {
           direction: 'DOWN',
           magnitude: pitchErrorDeg,
@@ -451,6 +509,7 @@ export class ClinicalAlignmentEngine {
         };
       } else {
         reasons.push('RAISE_CHIN');
+        rejectionReason = `Raise chin ${pitchDeg}°`;
         correction = {
           direction: 'UP',
           magnitude: pitchErrorDeg,
@@ -459,6 +518,8 @@ export class ClinicalAlignmentEngine {
       }
     } else if (!expressionValid && spec.requiresSmile) {
       reasons.push('SMILE_REQUIRED');
+      blockingFactors.push('SMILE_REQUIRED');
+      rejectionReason = 'Smile naturally';
       correction = {
         direction: 'HOLD_STILL',
         magnitude: 0.5,
@@ -466,6 +527,8 @@ export class ClinicalAlignmentEngine {
       };
     } else if (!sharpnessValid) {
       reasons.push('IMAGE_BLURRY');
+      blockingFactors.push('IMAGE_BLURRY');
+      rejectionReason = 'Hold steady to focus';
       correction = {
         direction: 'HOLD_STILL',
         magnitude: 0.5,
@@ -473,6 +536,8 @@ export class ClinicalAlignmentEngine {
       };
     } else if (!exposureValid) {
       reasons.push('ADJUST_LIGHTING');
+      blockingFactors.push('ADJUST_LIGHTING');
+      rejectionReason = rawLuminance < modeConfig.minLuminance ? 'Too dark — add light' : 'Too bright';
       correction = {
         direction: 'HOLD_STILL',
         magnitude: 0.5,
@@ -480,12 +545,24 @@ export class ClinicalAlignmentEngine {
       };
     } else if (!stabilityValid) {
       reasons.push('HOLD_STILL');
+      blockingFactors.push('MOTION_DETECTED');
+      rejectionReason = 'Device motion — hold still';
       correction = {
         direction: 'HOLD_STILL',
         magnitude: motionScore / 100,
         message: 'HOLD STILL',
       };
+    } else if (alignmentScore < modeConfig.enterReadyScore) {
+      reasons.push('SCORE_TOO_LOW');
+      blockingFactors.push('SCORE_TOO_LOW');
+      rejectionReason = `Align closer to guide (${alignmentScore}/${modeConfig.enterReadyScore})`;
+      correction = {
+        direction: 'HOLD_STILL',
+        magnitude: 0.2,
+        message: 'Fine-tune alignment',
+      };
     } else {
+      rejectionReason = undefined;
       correction = {
         direction: 'READY',
         magnitude: 0,
@@ -518,6 +595,8 @@ export class ClinicalAlignmentEngine {
         expressionScore,
       },
       reasons,
+      rejectionReason,
+      blockingFactors,
     };
   }
 }

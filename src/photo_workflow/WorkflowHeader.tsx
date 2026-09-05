@@ -1,15 +1,16 @@
 import React from 'react';
 import {
-  ChevronLeft,
-  ChevronRight,
-  Layers,
   User,
   Check,
-  AlertCircle,
+  Layers,
+  Zap,
+  ZapOff,
+  Volume2,
+  VolumeX,
+  Sliders,
   Trash2,
 } from 'lucide-react';
 import { ClinicalCase, LiveGuidanceState, OrthodonticViewDefinition } from '../types';
-import { ORTHODONTIC_VIEWS } from './workflowData';
 
 interface WorkflowHeaderProps {
   currentView: OrthodonticViewDefinition;
@@ -17,11 +18,17 @@ interface WorkflowHeaderProps {
   totalViews: number;
   activeCase: ClinicalCase;
   guidance: LiveGuidanceState;
-  onPrevious: () => void;
-  onNext: () => void;
   onOpenStepDrawer: () => void;
   onOpenPatientModal: () => void;
   onDeleteCurrentPhoto?: () => void;
+  flashMode?: 'off' | 'on' | 'auto' | 'torch';
+  onCycleFlash?: () => void;
+  voiceGuidanceEnabled?: boolean;
+  onToggleVoiceGuidance?: () => void;
+  onOpenSettings?: () => void;
+  // Retained for backward compatibility
+  onPrevious?: () => void;
+  onNext?: () => void;
   onSelectViewIndex?: (index: number) => void;
 }
 
@@ -30,258 +37,121 @@ const WorkflowHeaderComponent: React.FC<WorkflowHeaderProps> = ({
   currentIndex,
   totalViews,
   activeCase,
-  guidance,
-  onPrevious,
-  onNext,
   onOpenStepDrawer,
   onOpenPatientModal,
   onDeleteCurrentPhoto,
-  onSelectViewIndex,
+  flashMode = 'off',
+  onCycleFlash,
+  voiceGuidanceEnabled = false,
+  onToggleVoiceGuidance,
+  onOpenSettings,
 }) => {
-  const isReady = guidance.isReady;
   const isCurrentCaptured = Boolean(activeCase.photos[currentView.id]);
 
   return (
-    <header className="absolute top-0 left-0 right-0 z-50 pt-safe flex flex-col pointer-events-auto select-none bg-gradient-to-b from-black/90 via-black/70 to-transparent pb-3">
-      {/* 1. TOP BAR: Branding, Patient Profile Capsule, AI Status, Step Counter */}
-      <div className="px-3.5 pt-2 flex items-center justify-between gap-2">
-        {/* Patient / Record Capsule */}
+    <header className="absolute top-0 left-0 right-0 z-50 pt-safe flex items-center justify-between px-3.5 py-2 pointer-events-auto select-none bg-gradient-to-b from-black/85 via-black/40 to-transparent">
+      {/* 1. Left: Flash toggle + Patient Chip */}
+      <div className="flex items-center gap-1.5">
+        {onCycleFlash && (
+          <button
+            id="top-flash-btn"
+            onClick={onCycleFlash}
+            className="w-9 h-9 rounded-full bg-black/60 border border-white/15 backdrop-blur-xl flex items-center justify-center text-white active:scale-95 transition-all cursor-pointer hover:bg-white/10"
+            title={`Flash: ${flashMode.toUpperCase()} (tap to cycle)`}
+            aria-label="Toggle flash mode"
+          >
+            {flashMode === 'off' ? (
+              <ZapOff className="w-4 h-4 text-slate-400" />
+            ) : (
+              <Zap
+                className={`w-4 h-4 ${
+                  flashMode === 'torch'
+                    ? 'text-amber-300 fill-amber-300'
+                    : 'text-yellow-400 fill-yellow-400'
+                }`}
+              />
+            )}
+          </button>
+        )}
+
+        {/* Patient / Case Capsule */}
         <button
           onClick={onOpenPatientModal}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl shadow-lg active:scale-95 hover:border-cyan-500/60 transition-all text-left cursor-pointer"
-          aria-label="Patient details"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-black/60 border border-white/15 backdrop-blur-xl shadow-md active:scale-95 hover:border-cyan-500/50 transition-all text-left cursor-pointer max-w-[130px]"
+          title="Patient & Case Info"
         >
-          <div className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee] animate-pulse" />
           <User className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-          <div className="flex flex-col">
-            <span className="font-sans font-bold text-xs text-white leading-none truncate max-w-[130px]">
-              {activeCase.patientName || activeCase.patientId || 'New Clinical Record'}
-            </span>
-            <span className="font-mono text-[9px] text-cyan-300/80 leading-tight uppercase font-semibold">
-              {activeCase.caseType || 'INITIAL RECORD'}
-            </span>
-          </div>
-        </button>
-
-        {/* Center: Minimal Clinical AI Status Pill */}
-        <div
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border backdrop-blur-xl shadow-md font-mono text-[10px] font-bold tracking-wider uppercase transition-colors ${
-            isReady
-              ? 'bg-emerald-950/90 border-emerald-500/70 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.4)]'
-              : guidance.readyScore >= 40
-              ? 'bg-amber-950/90 border-amber-500/70 text-amber-300'
-              : 'bg-slate-950/90 border-slate-700/70 text-slate-400'
-          }`}
-        >
-          <span
-            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-              isReady
-                ? 'bg-emerald-400 shadow-[0_0_6px_#34d399] animate-pulse'
-                : guidance.readyScore >= 40
-                ? 'bg-amber-400 animate-pulse'
-                : 'bg-rose-500'
-            }`}
-          />
-          <span>{isReady ? 'AI READY' : guidance.readyScore >= 40 ? 'ALIGNING' : 'NOT READY'}</span>
-        </div>
-
-        {/* Step Counter Button */}
-        <button
-          onClick={onOpenStepDrawer}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/90 border border-slate-700/80 backdrop-blur-xl shadow-lg active:scale-95 hover:border-emerald-500/60 transition-all font-mono cursor-pointer"
-          title="View 11-Step Workflow"
-        >
-          <Layers className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="text-xs font-bold text-emerald-300">
-            {currentIndex + 1}
+          <span className="font-sans font-bold text-xs text-white truncate">
+            {activeCase.patientName || activeCase.patientId || 'Patient'}
           </span>
-          <span className="text-[10px] text-slate-500">/</span>
-          <span className="text-[10px] font-semibold text-slate-400">{totalViews}</span>
         </button>
       </div>
 
-      {/* 2. HERO VIEW NAVIGATION: Chevrons + Title Card */}
-      <div className="px-3 pt-2.5 flex items-center justify-between gap-2">
-        {/* Prev Arrow */}
-        <button
-          onClick={onPrevious}
-          disabled={currentIndex === 0}
-          className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-xl transition-all shrink-0 ${
-            currentIndex === 0
-              ? 'text-slate-700 bg-slate-950/40 border border-transparent cursor-not-allowed opacity-30'
-              : 'text-white bg-slate-900/90 border border-slate-700/80 active:scale-90 hover:bg-slate-800 shadow-md shadow-black/50 cursor-pointer'
-          }`}
-          aria-label="Previous view"
-        >
-          <ChevronLeft className="w-5 h-5 stroke-[2.5]" />
-        </button>
+      {/* 2. Center: Step Progress Pill (1 / 11) with Saved status */}
+      <button
+        onClick={onOpenStepDrawer}
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border backdrop-blur-xl shadow-md active:scale-95 transition-all font-mono text-xs cursor-pointer ${
+          isCurrentCaptured
+            ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300'
+            : 'bg-black/60 border-white/15 text-white hover:border-white/30'
+        }`}
+        title="Open 11-View Workflow Drawer"
+      >
+        <Layers className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+        <span className="font-bold">{currentIndex + 1}</span>
+        <span className="text-slate-500 text-[10px]">/</span>
+        <span className="text-slate-400 text-[10px]">{totalViews}</span>
 
-        {/* Center: Compact Hero View Card */}
-        <div
-          onClick={onOpenStepDrawer}
-          className="flex-1 px-3 py-1.5 rounded-2xl bg-slate-950/85 border border-slate-800/90 backdrop-blur-xl shadow-xl flex flex-col items-center justify-center cursor-pointer active:scale-[0.99] transition-all"
-        >
-          <div className="flex items-center gap-1.5 mb-0.5">
-            <span
-              className={`text-[8px] uppercase font-mono tracking-wider px-2 py-0.5 rounded-full font-extrabold ${
-                currentView.category === 'extraoral'
-                  ? 'bg-blue-500/25 text-blue-300 border border-blue-400/40'
-                  : 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/40'
-              }`}
-            >
-              {currentView.shortCode} • {currentView.category.toUpperCase()}
-            </span>
+        {isCurrentCaptured && (
+          <span className="flex items-center gap-0.5 ml-1 text-[9px] font-bold text-emerald-400 uppercase tracking-tight">
+            <Check className="w-2.5 h-2.5 stroke-[3]" />
+            SAVED
+          </span>
+        )}
+      </button>
 
-            {/* Photo Saved Badge */}
-            {isCurrentCaptured && (
-              <div
-                onClick={(e) => e.stopPropagation()}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-950/90 border border-emerald-500/60 text-[9px] font-mono text-emerald-300 font-bold"
-              >
-                <Check className="w-2.5 h-2.5 stroke-[3]" />
-                <span>SAVED</span>
-                {onDeleteCurrentPhoto && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteCurrentPhoto();
-                    }}
-                    className="ml-0.5 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
-                    title="Delete photo"
-                  >
-                    <Trash2 className="w-2.5 h-2.5" />
-                  </button>
-                )}
-              </div>
+      {/* 3. Right: Delete Photo (if saved) + Voice toggle + Settings */}
+      <div className="flex items-center gap-1.5">
+        {isCurrentCaptured && onDeleteCurrentPhoto && (
+          <button
+            onClick={onDeleteCurrentPhoto}
+            className="w-9 h-9 rounded-full bg-black/60 border border-white/15 backdrop-blur-xl flex items-center justify-center text-slate-400 hover:text-rose-400 active:scale-95 transition-all cursor-pointer"
+            title="Retake / delete this photo"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+
+        {onToggleVoiceGuidance && (
+          <button
+            id="top-voice-btn"
+            onClick={onToggleVoiceGuidance}
+            className={`w-9 h-9 rounded-full border backdrop-blur-xl flex items-center justify-center transition-all cursor-pointer active:scale-95 ${
+              voiceGuidanceEnabled
+                ? 'bg-cyan-500/25 border-cyan-400 text-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.4)]'
+                : 'bg-black/60 border-white/15 text-slate-400 hover:text-white'
+            }`}
+            title={voiceGuidanceEnabled ? 'Voice Guidance Active' : 'Voice Guidance Muted'}
+            aria-label="Toggle voice guidance"
+          >
+            {voiceGuidanceEnabled ? (
+              <Volume2 className="w-4 h-4" />
+            ) : (
+              <VolumeX className="w-4 h-4" />
             )}
-          </div>
+          </button>
+        )}
 
-          <h1 className="text-sm sm:text-base font-extrabold tracking-tight text-white uppercase text-center font-sans">
-            {currentView.name}
-          </h1>
-        </div>
-
-        {/* Next Arrow */}
-        <button
-          onClick={onNext}
-          disabled={currentIndex === totalViews - 1}
-          className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-xl transition-all shrink-0 ${
-            currentIndex === totalViews - 1
-              ? 'text-slate-700 bg-slate-950/40 border border-transparent cursor-not-allowed opacity-30'
-              : 'text-white bg-slate-900/90 border border-slate-700/80 active:scale-90 hover:bg-slate-800 shadow-md shadow-black/50 cursor-pointer'
-          }`}
-          aria-label="Next view"
-        >
-          <ChevronRight className="w-5 h-5 stroke-[2.5]" />
-        </button>
-      </div>
-
-      {/* 3. INTERACTIVE 11-VIEW MINI STEP RAIL */}
-      <div className="px-4 pt-2 flex items-center justify-center gap-1.5">
-        {ORTHODONTIC_VIEWS.map((v, idx) => {
-          const isCurrent = idx === currentIndex;
-          const isCaptured = Boolean(activeCase.photos[v.id]);
-
-          return (
-            <button
-              key={v.id}
-              onClick={() => onSelectViewIndex && onSelectViewIndex(idx)}
-              className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
-                isCurrent
-                  ? 'w-6 bg-cyan-400 shadow-[0_0_8px_#22d3ee]'
-                  : isCaptured
-                  ? 'w-2 bg-emerald-400 shadow-[0_0_6px_#34d399]'
-                  : 'w-1.5 bg-slate-700/80 hover:bg-slate-500'
-              }`}
-              title={`${idx + 1}. ${v.name}`}
-            />
-          );
-        })}
-      </div>
-
-      {/* 4. UNIFIED DYNAMIC GUIDANCE STATUS BAR (NO OVERLAPPING) */}
-      <div className="mt-2 flex items-center justify-center px-4">
-        {isReady ? (
-          <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-950/95 border border-emerald-400 text-emerald-200 text-xs font-bold tracking-wide shadow-[0_0_20px_rgba(16,185,129,0.5)] backdrop-blur-xl animate-in zoom-in-95 duration-200">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
-            <span className="font-mono text-emerald-300 font-extrabold">READY</span>
-            <span className="text-emerald-500">•</span>
-            <span>HOLD STILL</span>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-1.5">
-            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-black/85 border border-white/15 backdrop-blur-xl shadow-lg text-[10px] font-mono">
-              {/* Position */}
-              <span
-                className={`flex items-center gap-0.5 font-bold ${
-                  guidance.positionValid ? 'text-emerald-400' : 'text-slate-400'
-                }`}
-              >
-                {guidance.positionValid ? (
-                  <Check className="w-3 h-3 stroke-[3]" />
-                ) : (
-                  <AlertCircle className="w-3 h-3 text-amber-400" />
-                )}
-                POSITION
-              </span>
-
-              <span className="text-slate-600 text-[8px] font-bold">•</span>
-
-              {/* Frame Size */}
-              <span
-                className={`flex items-center gap-0.5 font-bold ${
-                  (guidance.frameSizeValid ?? guidance.distanceValid) ? 'text-emerald-400' : 'text-slate-400'
-                }`}
-              >
-                {(guidance.frameSizeValid ?? guidance.distanceValid) ? (
-                  <Check className="w-3 h-3 stroke-[3]" />
-                ) : (
-                  <AlertCircle className="w-3 h-3 text-amber-400" />
-                )}
-                FRAME SIZE
-              </span>
-
-              <span className="text-slate-600 text-[8px] font-bold">•</span>
-
-              {/* Angle */}
-              <span
-                className={`flex items-center gap-0.5 font-bold ${
-                  guidance.angleValid ? 'text-emerald-400' : 'text-slate-400'
-                }`}
-              >
-                {guidance.angleValid ? (
-                  <Check className="w-3 h-3 stroke-[3]" />
-                ) : (
-                  <AlertCircle className="w-3 h-3 text-amber-400" />
-                )}
-                ANGLE
-              </span>
-
-              <span className="text-slate-600 text-[8px] font-bold">•</span>
-
-              {/* Stability */}
-              <span
-                className={`flex items-center gap-0.5 font-bold ${
-                  (guidance.stabilityValid ?? guidance.isStable) ? 'text-emerald-400' : 'text-slate-400'
-                }`}
-              >
-                {(guidance.stabilityValid ?? guidance.isStable) ? (
-                  <Check className="w-3 h-3 stroke-[3]" />
-                ) : (
-                  <AlertCircle className="w-3 h-3 text-amber-400" />
-                )}
-                STABILITY
-              </span>
-            </div>
-
-            {/* Single Highest-Priority Guidance Message with numerical magnitude */}
-            {(guidance.highestPriorityCorrection || guidance.primaryMessage) && (
-              <div className="px-3 py-0.5 rounded-full bg-slate-900/90 border border-slate-700/80 text-[11px] font-sans font-semibold text-cyan-300 shadow-md uppercase tracking-wider">
-                {guidance.highestPriorityCorrection || guidance.primaryMessage}
-              </div>
-            )}
-          </div>
+        {onOpenSettings && (
+          <button
+            id="top-settings-btn"
+            onClick={onOpenSettings}
+            className="w-9 h-9 rounded-full bg-black/60 border border-white/15 backdrop-blur-xl flex items-center justify-center text-slate-300 hover:text-white active:scale-95 transition-all cursor-pointer hover:bg-white/10"
+            title="Settings & Tools"
+            aria-label="Settings"
+          >
+            <Sliders className="w-4 h-4" />
+          </button>
         )}
       </div>
     </header>

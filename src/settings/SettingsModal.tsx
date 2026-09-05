@@ -1,6 +1,8 @@
-import React from 'react';
-import { X, Sliders, Shield, BookOpen, Check } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Sliders, Shield, BookOpen, Check, Volume2, RefreshCw, Zap, Sparkles } from 'lucide-react';
 import { AppSettings } from '../types';
+import { MediaPipeVision, MediaPipeStatus } from '../ai_positioning/MediaPipeVisionEngine';
+import { CAPTURE_MODE_CONFIGS, CaptureMode } from '../ai_positioning/CaptureConfig';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -17,6 +19,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUpdateSettings,
   onOpenAndroidDocs,
 }) => {
+  const [aiStatus, setAiStatus] = useState<MediaPipeStatus>(MediaPipeVision.getStatus());
+  const [isReloadingAi, setIsReloadingAi] = useState(false);
+
+  useEffect(() => {
+    return MediaPipeVision.subscribeStatus(setAiStatus);
+  }, []);
+
+  const handleReloadAi = async () => {
+    setIsReloadingAi(true);
+    try {
+      await MediaPipeVision.reload();
+    } finally {
+      setIsReloadingAi(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -38,7 +56,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full text-slate-400 hover:text-white bg-slate-900 border border-slate-700/70 transition-colors"
+            className="p-1.5 rounded-full text-slate-400 hover:text-white bg-slate-900 border border-slate-700/70 transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -46,14 +64,64 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Settings Body */}
         <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto text-xs">
-          {/* 1. Auto Capture */}
-          {/* Auto-Capture Settings */}
+          {/* 1. Capture Mode Profile (P0 Requirement) */}
+          <div className="bg-slate-900/80 border border-slate-800/90 rounded-2xl p-4 space-y-3 shadow-md">
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-100 text-sm block">Auto-Capture Mode</span>
+                <span className="text-[10px] font-mono text-cyan-400 font-bold uppercase tracking-wider">
+                  Target: {settings.captureMode || 'balanced'}
+                </span>
+              </div>
+              <p className="text-slate-400 text-[11px] leading-relaxed mt-0.5">
+                Controls alignment difficulty and time-to-capture. Fast mode solves long wait times.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              {(['fast', 'balanced', 'clinical'] as CaptureMode[]).map((mode) => {
+                const conf = CAPTURE_MODE_CONFIGS[mode];
+                const isSelected = (settings.captureMode || 'balanced') === mode;
+                return (
+                  <button
+                    key={mode}
+                    onClick={() => {
+                      onUpdateSettings({
+                        ...settings,
+                        captureMode: mode,
+                        stabilityConfirmationMs: conf.stabilityConfirmationMs,
+                      });
+                    }}
+                    className={`py-2 px-2 rounded-xl border flex flex-col items-center justify-center text-center transition-all cursor-pointer ${
+                      isSelected
+                        ? mode === 'fast'
+                          ? 'bg-amber-500/20 border-amber-400 text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.35)]'
+                          : mode === 'clinical'
+                          ? 'bg-purple-500/20 border-purple-400 text-purple-300 shadow-[0_0_12px_rgba(168,85,247,0.35)]'
+                          : 'bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.35)]'
+                        : 'bg-slate-800/70 border-slate-700/60 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <span className="font-mono text-xs font-bold uppercase">{mode}</span>
+                    <span className="text-[9px] text-slate-400 mt-0.5 font-mono">
+                      Score &ge;{conf.enterReadyScore}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] font-mono text-slate-400 bg-black/40 p-2 rounded-xl border border-white/5">
+              {CAPTURE_MODE_CONFIGS[settings.captureMode || 'balanced'].description}
+            </p>
+          </div>
+
+          {/* 2. Auto Capture & Stability Settings */}
           <div className="bg-slate-900/80 border border-slate-800/90 rounded-2xl p-4 space-y-3 shadow-md">
             <div className="flex items-center justify-between">
               <div>
-                <span className="font-bold text-slate-100 text-sm block">Auto-Capture</span>
+                <span className="font-bold text-slate-100 text-sm block">Auto-Capture Trigger</span>
                 <p className="text-slate-400 text-[11px] leading-relaxed">
-                  Instantly captures photo when clinical alignment and stability are confirmed.
+                  Automatically fires shutter when face satisfies alignment score and stability window.
                 </p>
               </div>
               <label className="relative inline-flex items-center cursor-pointer ml-3">
@@ -82,7 +150,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       onClick={() =>
                         onUpdateSettings({ ...settings, burstModeEnabled: false })
                       }
-                      className={`px-3 py-1 rounded-lg font-mono text-xs font-bold transition-all ${
+                      className={`px-3 py-1 rounded-lg font-mono text-xs font-bold transition-all cursor-pointer ${
                         !settings.burstModeEnabled
                           ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 text-slate-950 shadow-[0_0_10px_rgba(16,185,129,0.4)]'
                           : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
@@ -94,7 +162,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       onClick={() =>
                         onUpdateSettings({ ...settings, burstModeEnabled: true, burstCount: 3 })
                       }
-                      className={`px-3 py-1 rounded-lg font-mono text-xs font-bold transition-all ${
+                      className={`px-3 py-1 rounded-lg font-mono text-xs font-bold transition-all cursor-pointer ${
                         settings.burstModeEnabled
                           ? 'bg-gradient-to-r from-cyan-500 to-cyan-400 text-slate-950 shadow-[0_0_10px_rgba(6,182,212,0.4)]'
                           : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
@@ -105,21 +173,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
 
-                {/* Stability Confirmation Duration */}
+                {/* Extended Stability Confirmation Duration */}
                 <div className="pt-2.5 border-t border-slate-800/60 flex items-center justify-between">
                   <div>
                     <span className="text-slate-200 font-medium text-xs block">Stability Window</span>
-                    <span className="text-slate-400 text-[10px]">Hold-still verification duration</span>
+                    <span className="text-slate-400 text-[10px]">Continuous hold-still duration</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    {[200, 220, 300].map((ms) => (
+                  <div className="flex items-center gap-1">
+                    {[100, 150, 180, 220, 300].map((ms) => (
                       <button
                         key={ms}
                         onClick={() =>
                           onUpdateSettings({ ...settings, stabilityConfirmationMs: ms })
                         }
-                        className={`px-2.5 py-1 rounded-lg font-mono text-xs font-bold transition-all ${
-                          (settings.stabilityConfirmationMs || 220) === ms
+                        className={`px-2 py-1 rounded-lg font-mono text-[11px] font-bold transition-all cursor-pointer ${
+                          (settings.stabilityConfirmationMs || 180) === ms
                             ? 'bg-gradient-to-r from-emerald-500 to-emerald-400 text-slate-950 shadow-[0_0_10px_rgba(16,185,129,0.4)]'
                             : 'bg-slate-800/80 text-slate-400 hover:text-slate-200'
                         }`}
@@ -131,6 +199,58 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </>
             )}
+          </div>
+
+          {/* 3. Spoken Voice Guidance (P1 Requirement) */}
+          <div className="bg-slate-900/80 border border-slate-800/90 rounded-2xl p-4 space-y-3 shadow-md">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="font-bold text-slate-100 text-sm block">Voice Guidance</span>
+                <p className="text-slate-400 text-[11px] leading-relaxed">
+                  Spoken directional cues (&quot;Move closer&quot;, &quot;Turn right&quot;, &quot;Hold still&quot;) so you can focus on the patient.
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer ml-3">
+                <input
+                  type="checkbox"
+                  checked={!!settings.voiceGuidanceEnabled}
+                  onChange={(e) =>
+                    onUpdateSettings({ ...settings, voiceGuidanceEnabled: e.target.checked })
+                  }
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-500 shadow-inner"></div>
+              </label>
+            </div>
+          </div>
+
+          {/* 4. AI Vision Engine Status & Reload */}
+          <div className="bg-slate-900/80 border border-slate-800/90 rounded-2xl p-4 space-y-2.5 shadow-md">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-slate-100 text-sm block">AI Vision Engine Status</span>
+              <span
+                className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-bold uppercase ${
+                  aiStatus.isReady
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
+                    : aiStatus.isLoading
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40 animate-pulse'
+                    : 'bg-rose-500/20 text-rose-300 border border-rose-400/40'
+                }`}
+              >
+                {aiStatus.isReady ? `Active (${aiStatus.delegate})` : aiStatus.isLoading ? 'Loading...' : 'Fallback'}
+              </span>
+            </div>
+            <p className="text-slate-400 text-[11px] leading-relaxed">
+              {aiStatus.progressMessage || (aiStatus.isReady ? 'MediaPipe FaceLandmarker running on GPU' : 'Model not ready')}
+            </p>
+            <button
+              onClick={handleReloadAi}
+              disabled={isReloadingAi}
+              className="w-full py-2 px-3 bg-slate-800 hover:bg-slate-700 active:scale-98 text-slate-200 font-mono text-xs font-semibold rounded-xl border border-slate-700 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isReloadingAi ? 'animate-spin text-cyan-400' : ''}`} />
+              <span>{isReloadingAi ? 'Reloading Vision Model...' : 'Reload Vision Models'}</span>
+            </button>
           </div>
 
           {/* Hands-Free Auto Advance */}

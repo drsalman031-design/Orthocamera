@@ -1,3 +1,5 @@
+export type CaptureMode = 'fast' | 'balanced' | 'clinical';
+
 export type ViewCategory = 'extraoral' | 'intraoral';
 
 export type ViewId =
@@ -62,6 +64,8 @@ export interface CaptureReadiness {
   temporalStabilityValid: boolean;
   highestPriorityCorrection?: string;
   reasons: string[];
+  rejectionReason?: string; // Clear human-readable reason why capture is currently blocked
+  blockingFactors?: string[]; // Specific blocking criteria
   confidence: number;
 }
 
@@ -213,6 +217,9 @@ export interface LiveGuidanceState {
   landmarkQuality?: LandmarkQuality;
   temporalStability?: TemporalStability;
   dominantReason?: string;
+  rejectionReason?: string; // Human readable reason why auto-capture is blocked
+  blockingFactors?: string[]; // Specific blocking criteria
+  captureMode?: 'fast' | 'balanced' | 'clinical';
   alignmentScore?: number; // Continuous 0 to 100
   alignmentCorrection?: {
     direction:
@@ -260,8 +267,10 @@ export interface ClinicalCase {
 
 export interface AppSettings {
   autoCaptureEnabled: boolean;
+  captureMode: 'fast' | 'balanced' | 'clinical'; // Fast (~1s), Balanced (~1.8s), Clinical (~2.5s)
+  voiceGuidanceEnabled: boolean; // Real-time spoken guidance
   autoCaptureDelaySec: number; // Retained for backward compat
-  stabilityConfirmationMs: number; // 200 - 300 ms continuous stability requirement
+  stabilityConfirmationMs: number; // 100 - 300 ms continuous stability requirement
   burstModeEnabled: boolean; // Default false (Instant Single Shot)
   burstCount: number; // Default 3 when enabled
   showClinicalGrid: boolean;
@@ -278,5 +287,5 @@ export interface AppSettings {
   diagnosticsOverlay: boolean; // Show real-time camera FPS, AI latency & motion diagnostics
   ghostOverlayEnabled: boolean; // Longitudinal ghost alignment
   ghostOverlayOpacity: number; // 0.1 to 0.4
-  allowManualCaptureOverride?: boolean; // Override alignment gate on manual shutter press (default false)
+  allowManualCaptureOverride?: boolean; // Override alignment gate on manual shutter press (default true for force capture)
 }

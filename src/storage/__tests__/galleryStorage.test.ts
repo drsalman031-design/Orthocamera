@@ -10,6 +10,7 @@ vi.mock('@capacitor/core', () => ({
   },
   registerPlugin: vi.fn().mockReturnValue({
     savePhotoToGallery: vi.fn(),
+    openGallery: vi.fn(),
   }),
 }));
 
@@ -185,5 +186,27 @@ describe('GalleryStorage', () => {
     expect(batchResult.savedCount).toBe(2);
     expect(batchResult.results.every((r) => r.method === 'gallery')).toBe(true);
     expect(progressSpy).toHaveBeenCalledTimes(2);
+  });
+
+  describe('openGallery', () => {
+    it('invokes native GallerySave.openGallery when running on native platform', async () => {
+      vi.mocked(Capacitor.isNativePlatform).mockReturnValue(true);
+      vi.mocked(GallerySave.openGallery).mockResolvedValueOnce({ success: true });
+
+      const result = await GalleryStorage.openGallery('content://media/test/123');
+
+      expect(Capacitor.isNativePlatform).toHaveBeenCalled();
+      expect(GallerySave.openGallery).toHaveBeenCalledWith({ uri: 'content://media/test/123' });
+      expect(result.success).toBe(true);
+    });
+
+    it('triggers document file input click in web/browser environment', async () => {
+      vi.mocked(Capacitor.isNativePlatform).mockReturnValue(false);
+
+      const result = await GalleryStorage.openGallery();
+
+      expect(result.success).toBe(true);
+      expect(mockClick).toHaveBeenCalled();
+    });
   });
 });

@@ -26,7 +26,11 @@ export interface MediaPipeStatus {
   isReady: boolean;
   error: string | null;
   delegate: 'GPU' | 'CPU';
+  stage?: 'idle' | 'resolving_wasm' | 'loading_model' | 'initializing_gpu' | 'initializing_cpu' | 'ready' | 'failed';
+  progressMessage?: string;
 }
+
+export type MediaPipeModelStatus = MediaPipeStatus;
 
 const FACE_OVAL_INDICES = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10];
 const LIP_INDICES = [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291, 375, 321, 405, 314, 17, 84, 181, 91, 146, 61];
@@ -43,6 +47,8 @@ class MediaPipeVisionEngineSingleton {
     isReady: false,
     error: null,
     delegate: 'GPU',
+    stage: 'idle',
+    progressMessage: '',
   };
   private statusListeners: Array<(status: MediaPipeStatus) => void> = [];
   private lastInferenceTime = 0;
@@ -69,6 +75,10 @@ class MediaPipeVisionEngineSingleton {
     };
   }
 
+  public subscribe(listener: (status: MediaPipeStatus) => void): () => void {
+    return this.subscribeStatus(listener);
+  }
+
   private notifyStatus() {
     const s = this.getStatus();
     this.statusListeners.forEach((l) => {
@@ -80,6 +90,19 @@ class MediaPipeVisionEngineSingleton {
     });
   }
 
+  public async reload(): Promise<boolean> {
+    if (this.faceLandmarker) {
+      try {
+        this.faceLandmarker.close();
+      } catch {
+        // ignore
+      }
+      this.faceLandmarker = null;
+    }
+    this.isInitializing = false;
+    return this.init();
+  }
+
   public async init(): Promise<boolean> {
     if (this.faceLandmarker) return true;
     if (this.isInitializing) return false;
@@ -87,6 +110,8 @@ class MediaPipeVisionEngineSingleton {
     this.isInitializing = true;
     this.status.isLoading = true;
     this.status.error = null;
+    this.status.stage = 'resolving_wasm';
+    this.status.progressMessage = 'Loading Vision WebAssembly binaries...';
     this.notifyStatus();
 
     try {
@@ -117,6 +142,10 @@ class MediaPipeVisionEngineSingleton {
       const cdnModelPath =
         'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
 
+      this.status.stage = targetDelegate === 'GPU' ? 'initializing_gpu' : 'initializing_cpu';
+      this.status.progressMessage = `Compiling ML pipeline on ${targetDelegate}...`;
+      this.notifyStatus();
+
       const createLandmarker = async (delegate: 'GPU' | 'CPU', modelPath: string) => {
         return await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
@@ -140,12 +169,17 @@ class MediaPipeVisionEngineSingleton {
           this.status.delegate = targetDelegate;
         } catch (localModelErr) {
           console.warn('[MediaPipe] Local model failed, trying CDN model:', localModelErr);
+          this.status.progressMessage = 'Loading model from CDN...';
+          this.notifyStatus();
           this.faceLandmarker = await createLandmarker(targetDelegate, cdnModelPath);
           this.status.delegate = targetDelegate;
         }
       } catch (delegateErr) {
         if (targetDelegate === 'GPU') {
           console.info('[MediaPipe] GPU delegate failed, falling back to CPU delegate.');
+          this.status.stage = 'initializing_cpu';
+          this.status.progressMessage = 'Falling back to CPU neural delegate...';
+          this.notifyStatus();
           try {
             this.faceLandmarker = await createLandmarker('CPU', localModelPath);
           } catch {
@@ -159,6 +193,8 @@ class MediaPipeVisionEngineSingleton {
 
       this.status.isLoading = false;
       this.status.isReady = true;
+      this.status.stage = 'ready';
+      this.status.progressMessage = `Vision Ready (${this.status.delegate})`;
       this.isInitializing = false;
       this.notifyStatus();
       console.log(`[MediaPipe] FaceLandmarker initialized successfully on ${this.status.delegate}`);
@@ -167,7 +203,9 @@ class MediaPipeVisionEngineSingleton {
       console.error('[MediaPipe] Failed to load FaceLandmarker:', err);
       this.status.isLoading = false;
       this.status.isReady = false;
+      this.status.stage = 'failed';
       this.status.error = err instanceof Error ? err.message : 'Failed to load MediaPipe model';
+      this.status.progressMessage = 'Vision model failed — native fallback active';
       this.isInitializing = false;
       this.notifyStatus();
       return false;
@@ -200,8 +238,9 @@ class MediaPipeVisionEngineSingleton {
       return this.lastResult;
     }
 
-    // Guard against re-entrant calls within 80ms to prevent GPU thermal saturation
-    if (timestampMs - this.lastInferenceTime < 80) {
+    // Guard against re-entrant calls: 40ms on GPU (~25 FPS max) and 65ms on CPU
+    const minThrottleMs = this.status.delegate === 'GPU' ? 40 : 65;
+    if (timestampMs - this.lastInferenceTime < minThrottleMs) {
       return this.lastResult;
     }
 

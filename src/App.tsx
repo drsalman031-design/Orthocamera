@@ -5,6 +5,7 @@ import {
   ClinicalCase,
   LiveGuidanceState,
   ViewId,
+  CaptureMode,
 } from './types';
 import { ORTHODONTIC_VIEWS, getViewByIndex } from './photo_workflow/workflowData';
 import { CaseStorage } from './storage/caseStorage';
@@ -13,6 +14,7 @@ import { CameraManager, CameraTelemetry } from './camera/CameraManager';
 import { OrthodonticOverlayCanvas } from './overlay/OrthodonticOverlayCanvas';
 import { WorkflowHeader } from './photo_workflow/WorkflowHeader';
 import { CameraControls } from './photo_workflow/CameraControls';
+import { LiveGuidanceHUD } from './photo_workflow/LiveGuidanceHUD';
 import { QuickReviewOverlay } from './photo_workflow/QuickReviewOverlay';
 import { ProgressDrawer } from './photo_workflow/ProgressDrawer';
 import { PhotoLightboxModal } from './photo_workflow/PhotoLightboxModal';
@@ -22,15 +24,19 @@ import { AndroidGuideModal } from './components/AndroidGuideModal';
 import { GhostOverlayManager } from './overlay/GhostOverlayManager';
 import { DiagnosticsHUD } from './components/DiagnosticsHUD';
 import { HysteresisController } from './ai_positioning/HysteresisController';
+import { VoiceGuidance } from './ai_positioning/VoiceGuidanceEngine';
+import { MediaPipeVision, MediaPipeModelStatus } from './ai_positioning/MediaPipeVisionEngine';
 import { CapturePerformanceTracker } from './telemetry/CapturePerformanceTracker';
 import { Check, AlertCircle, Camera } from 'lucide-react';
 
 const DEFAULT_SETTINGS: AppSettings = {
   autoCaptureEnabled: true,
+  captureMode: 'balanced',
+  voiceGuidanceEnabled: false,
   autoCaptureDelaySec: 0,
   burstModeEnabled: false,
   burstCount: 3,
-  stabilityConfirmationMs: 220,
+  stabilityConfirmationMs: 180,
   showClinicalGrid: false,
   showFaceMesh: true,
   showReferenceLabels: true,
@@ -45,6 +51,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   diagnosticsOverlay: false,
   ghostOverlayEnabled: false,
   ghostOverlayOpacity: 0.2,
+  allowManualCaptureOverride: true,
 };
 
 export default function App() {
@@ -132,6 +139,17 @@ export default function App() {
     isHardwareZoom: false,
   });
 
+  // MediaPipe AI Model Status Listener
+  const [aiModelStatus, setAiModelStatus] = useState<MediaPipeModelStatus>(() =>
+    MediaPipeVision.getStatus()
+  );
+
+  useEffect(() => {
+    return MediaPipeVision.subscribe((status) => {
+      setAiModelStatus(status);
+    });
+  }, []);
+
   // Load persistent storage in background without blocking UI
   useEffect(() => {
     CaseStorage.init().then(() => {
@@ -141,10 +159,11 @@ export default function App() {
     });
   }, []);
 
-  // Update Hysteresis Controller stability confirmation duration when setting changes
+  // Update Hysteresis Controller stability confirmation duration and capture mode when settings change
   useEffect(() => {
-    hysteresisRef.current.setStabilityConfirmationDuration(settings.stabilityConfirmationMs || 220);
-  }, [settings.stabilityConfirmationMs]);
+    hysteresisRef.current.setStabilityConfirmationDuration(settings.stabilityConfirmationMs || 180);
+    hysteresisRef.current.setCaptureMode(settings.captureMode || 'balanced');
+  }, [settings.stabilityConfirmationMs, settings.captureMode]);
 
   // Audio Chime Synthesizer
   const playCaptureChime = useCallback(() => {
@@ -178,6 +197,10 @@ export default function App() {
         return;
       }
 
+      // Sync settings to hysteresis and voice guidance
+      hysteresisRef.current.setCaptureMode(settings.captureMode || 'balanced');
+      VoiceGuidance.setEnabled(Boolean(settings.voiceGuidanceEnabled));
+
       // Drive state machine with hysteresis: SEARCHING -> ALIGNING -> READY_CANDIDATE -> STABILITY_CONFIRMATION -> CAPTURE
       const isMotionStatic = (newGuidance.motionScore ?? 0) < 20;
       const update = hysteresisRef.current.update(
@@ -190,11 +213,15 @@ export default function App() {
 
       const enhancedGuidance: LiveGuidanceState = {
         ...newGuidance,
+        captureMode: settings.captureMode || 'balanced',
         guidanceStage: update.guidanceStage,
         timeToCaptureMs: update.timeToCaptureMs,
         isReady: update.guidanceStage === 'READY_CANDIDATE' || update.guidanceStage === 'STABILITY_CONFIRMATION',
       };
       setGuidance(enhancedGuidance);
+
+      // Auditory clinical voice guidance
+      VoiceGuidance.update(enhancedGuidance);
 
       setAutoCaptureCountdown(update.countdownSeconds);
 
@@ -202,8 +229,29 @@ export default function App() {
         setAutoCaptureTrigger(true);
       }
     },
-    [capturedPhotoForReview, settings.autoCaptureEnabled]
+    [capturedPhotoForReview, settings.autoCaptureEnabled, settings.captureMode, settings.voiceGuidanceEnabled]
   );
+
+  // Capture Mode cycling handler (Fast -> Balanced -> Clinical -> Fast)
+  const handleCycleCaptureMode = useCallback(() => {
+    const modes: CaptureMode[] = ['fast', 'balanced', 'clinical'];
+    const nextIdx = (modes.indexOf(settings.captureMode || 'balanced') + 1) % modes.length;
+    const nextMode = modes[nextIdx];
+    setSettings((prev) => ({ ...prev, captureMode: nextMode }));
+    hysteresisRef.current.setCaptureMode(nextMode);
+  }, [settings.captureMode]);
+
+  // Voice Guidance toggle handler
+  const handleToggleVoiceGuidance = useCallback(() => {
+    setSettings((prev) => {
+      const next = !prev.voiceGuidanceEnabled;
+      VoiceGuidance.setEnabled(next);
+      if (next) {
+        VoiceGuidance.speakImmediate('Voice guidance active');
+      }
+      return { ...prev, voiceGuidanceEnabled: next };
+    });
+  }, []);
 
   // Flash cycling handler
   const handleCycleFlash = () => {
@@ -267,6 +315,11 @@ export default function App() {
       // 2. Immediate audio & haptic confirmation feedback per shot
       playCaptureChime();
       CapturePerformanceTracker.recordCaptureFeedback();
+
+      // Spoken voice feedback
+      if (settings.voiceGuidanceEnabled) {
+        VoiceGuidance.speakImmediate('Photo captured');
+      }
 
       if (settings.hapticFeedback && typeof navigator !== 'undefined' && navigator.vibrate) {
         navigator.vibrate([30, 40, 30]);
@@ -334,6 +387,7 @@ export default function App() {
       settings.autoSaveToGallery,
       settings.handsFreeAutoAdvance,
       settings.hapticFeedback,
+      settings.voiceGuidanceEnabled,
     ]
   );
 
@@ -359,7 +413,7 @@ export default function App() {
   );
   const latestPhoto = photoList.sort((a, b) => b.timestamp - a.timestamp)[0];
 
-  // Open phone's native gallery (Google Photos / Samsung Gallery) or in-app preview
+  // Open phone's native gallery (Google Photos / Samsung Gallery) or device photo gallery
   const handleOpenGallery = useCallback(async () => {
     if (GalleryStorage.isNativeAndroid()) {
       setGalleryToast({
@@ -377,14 +431,43 @@ export default function App() {
         setTimeout(() => setGalleryToast(null), 3000);
       }
     } else {
-      // In web browser: open the photo in high-res lightbox or open step drawer
+      // In web / mobile browser:
+      // If clinician has captured a photo, preview it in high-res lightbox.
+      // Otherwise, directly launch the device's native mobile gallery (never show workflow drawer).
       if (latestPhoto) {
         setPhotoForLightbox(latestPhoto);
       } else {
-        setIsStepDrawerOpen(true);
+        setGalleryToast({
+          message: 'Opening Mobile Gallery',
+          filename: 'Pictures/Orthocamera',
+        });
+        setTimeout(() => setGalleryToast(null), 2500);
+
+        const res = await GalleryStorage.openGallery(undefined, (dataUrl) => {
+          setPhotoForLightbox({
+            viewId: currentView.id,
+            dataUrl,
+            timestamp: Date.now(),
+            metadata: {
+              motionScore: 0,
+              sharpnessScore: 100,
+              framingValid: true,
+              angleValid: true,
+              lightingValid: true,
+            },
+          });
+        });
+
+        if (!res.success && res.error) {
+          setGalleryToast({
+            message: 'Gallery Notice',
+            filename: res.error,
+          });
+          setTimeout(() => setGalleryToast(null), 3000);
+        }
       }
     }
-  }, [latestGalleryUri, latestPhoto]);
+  }, [latestGalleryUri, latestPhoto, currentView.id]);
 
   // Delete a captured photo from the active clinical case
   const handleDeletePhoto = (viewId: ViewId) => {
@@ -463,6 +546,7 @@ export default function App() {
       <CameraManager
         currentView={currentView}
         guidanceSensitivity={settings.guidanceSensitivity}
+        captureMode={settings.captureMode}
         onGuidanceUpdate={handleGuidanceUpdate}
         onPhotoCaptured={handlePhotoCaptured}
         autoCaptureTrigger={autoCaptureTrigger}
@@ -478,6 +562,14 @@ export default function App() {
         onSwipeNext={() => setCurrentViewIndex((prev) => Math.min(ORTHODONTIC_VIEWS.length - 1, prev + 1))}
         onSwipePrevious={() => setCurrentViewIndex((prev) => Math.max(0, prev - 1))}
       >
+        {/* Single Smart Alignment HUD: Score, Rejection Reasons, and AI Status */}
+        <LiveGuidanceHUD
+          guidance={guidance}
+          currentView={currentView}
+          captureMode={settings.captureMode}
+          aiModelStatus={aiModelStatus}
+        />
+
         {/* ======================================================================= */}
         {/* 2. GHOST OVERLAY LAYER: LONGITUDINAL STANDARDIZATION (Live Only)         */}
         {/* ======================================================================= */}
@@ -509,7 +601,7 @@ export default function App() {
         />
 
         {/* ======================================================================= */}
-        {/* 4. HUD LAYER: TRANSLUCENT NAVIGATION & STATUS PILLS                     */}
+        {/* 4. HUD LAYER: SLEEK TOP BAR (Mobile Camera Style)                       */}
         {/* ======================================================================= */}
         <WorkflowHeader
           currentView={currentView}
@@ -517,14 +609,14 @@ export default function App() {
           totalViews={ORTHODONTIC_VIEWS.length}
           activeCase={activeCase}
           guidance={guidance}
-          onPrevious={() => setCurrentViewIndex((prev) => Math.max(0, prev - 1))}
-          onNext={() =>
-            setCurrentViewIndex((prev) => Math.min(ORTHODONTIC_VIEWS.length - 1, prev + 1))
-          }
           onOpenStepDrawer={() => setIsStepDrawerOpen(true)}
           onOpenPatientModal={() => setIsPatientModalOpen(true)}
           onDeleteCurrentPhoto={() => handleDeletePhoto(currentView.id)}
-          onSelectViewIndex={(index) => setCurrentViewIndex(index)}
+          flashMode={flashMode}
+          onCycleFlash={handleCycleFlash}
+          voiceGuidanceEnabled={settings.voiceGuidanceEnabled}
+          onToggleVoiceGuidance={handleToggleVoiceGuidance}
+          onOpenSettings={() => setIsSettingsOpen(true)}
         />
 
         {/* Real-time Diagnostics HUD (Toggled via Settings) */}
@@ -543,15 +635,21 @@ export default function App() {
         />
 
         {/* ======================================================================= */}
-        {/* 5. CONTROLS LAYER: BOTTOM SHUTTER & CONTROLS                            */}
+        {/* 5. CONTROLS LAYER: BOTTOM SHUTTER & VIEW SELECTOR (Mobile Camera Style) */}
         {/* ======================================================================= */}
         <CameraControls
           guidance={guidance}
+          currentView={currentView}
+          currentIndex={currentViewIndex}
+          totalViews={ORTHODONTIC_VIEWS.length}
+          onPrevious={() => setCurrentViewIndex((prev) => Math.max(0, prev - 1))}
+          onNext={() =>
+            setCurrentViewIndex((prev) => Math.min(ORTHODONTIC_VIEWS.length - 1, prev + 1))
+          }
+          onOpenStepDrawer={() => setIsStepDrawerOpen(true)}
           onCapture={triggerManualCapture}
-          flashMode={flashMode}
-          onCycleFlash={handleCycleFlash}
+          onForceCapture={triggerManualCapture}
           onSwitchCamera={handleSwitchCamera}
-          onOpenSettings={() => setIsSettingsOpen(true)}
           zoomLevel={zoomLevel}
           onSetZoom={setZoomLevel}
           autoCaptureCountdown={autoCaptureCountdown}
@@ -564,6 +662,8 @@ export default function App() {
               autoCaptureEnabled: !prev.autoCaptureEnabled,
             }))
           }
+          captureMode={settings.captureMode}
+          onCycleCaptureMode={handleCycleCaptureMode}
           onOpenGallery={handleOpenGallery}
         />
       </CameraManager>

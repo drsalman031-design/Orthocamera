@@ -1,15 +1,25 @@
 import React from 'react';
-import { Zap, ZapOff, RefreshCw, Sliders, Image as ImageIcon, Sparkles } from 'lucide-react';
-import { LiveGuidanceState } from '../types';
+import {
+  ChevronLeft,
+  ChevronRight,
+  RefreshCw,
+  Image as ImageIcon,
+  Sparkles,
+  Zap,
+} from 'lucide-react';
+import { LiveGuidanceState, OrthodonticViewDefinition } from '../types';
 
 interface CameraControlsProps {
   guidance: LiveGuidanceState;
+  currentView?: OrthodonticViewDefinition;
+  currentIndex?: number;
+  totalViews?: number;
+  onPrevious?: () => void;
+  onNext?: () => void;
+  onOpenStepDrawer?: () => void;
   onCapture: () => void;
-  flashMode: 'off' | 'on' | 'auto' | 'torch';
-  onCycleFlash: () => void;
+  onForceCapture?: () => void;
   onSwitchCamera: () => void;
-  onOpenReview?: () => void;
-  onOpenSettings: () => void;
   zoomLevel: number;
   onSetZoom: (zoom: number) => void;
   autoCaptureCountdown: number | null;
@@ -18,16 +28,27 @@ interface CameraControlsProps {
   autoCaptureEnabled?: boolean;
   onToggleAutoCapture?: () => void;
   onOpenGallery?: () => void;
+  captureMode?: 'fast' | 'balanced' | 'clinical';
+  onCycleCaptureMode?: () => void;
+  // Retained for backward compatibility
+  flashMode?: 'off' | 'on' | 'auto' | 'torch';
+  onCycleFlash?: () => void;
+  onOpenSettings?: () => void;
+  voiceGuidanceEnabled?: boolean;
+  onToggleVoiceGuidance?: () => void;
 }
 
 const CameraControlsComponent: React.FC<CameraControlsProps> = ({
   guidance,
+  currentView,
+  currentIndex = 0,
+  totalViews = 11,
+  onPrevious,
+  onNext,
+  onOpenStepDrawer,
   onCapture,
-  flashMode,
-  onCycleFlash,
+  onForceCapture,
   onSwitchCamera,
-  onOpenReview,
-  onOpenSettings,
   zoomLevel,
   onSetZoom,
   autoCaptureCountdown,
@@ -36,24 +57,69 @@ const CameraControlsComponent: React.FC<CameraControlsProps> = ({
   autoCaptureEnabled = true,
   onToggleAutoCapture,
   onOpenGallery,
+  captureMode = 'balanced',
+  onCycleCaptureMode,
 }) => {
   const isReady = guidance.isReady;
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 z-60 pb-safe pb-4 pt-3 flex flex-col items-center pointer-events-auto bg-gradient-to-t from-black via-black/85 to-transparent select-none">
-      {/* 1. Zoom Segmented Bar & Auto-Capture Toggle */}
-      <div className="flex items-center gap-2 mb-3">
-        {/* Zoom Selector */}
-        <div className="flex items-center gap-1 bg-black/80 backdrop-blur-2xl border border-white/15 p-1 rounded-full shadow-2xl">
+    <div className="absolute bottom-0 left-0 right-0 z-50 pb-safe pb-3 pt-4 flex flex-col items-center pointer-events-auto bg-gradient-to-t from-black via-black/80 to-transparent select-none">
+      {/* 1. VIEW / MODE SELECTOR (Mimics iOS/Android Camera Mode Carousel) */}
+      {currentView && (
+        <div className="flex items-center justify-center gap-3 mb-2 px-6 w-full max-w-sm">
+          {onPrevious && (
+            <button
+              onClick={onPrevious}
+              disabled={currentIndex === 0}
+              className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
+                currentIndex === 0
+                  ? 'text-white/20 cursor-not-allowed'
+                  : 'text-white/70 hover:text-white active:scale-90 cursor-pointer'
+              }`}
+              aria-label="Previous position"
+            >
+              <ChevronLeft className="w-5 h-5 stroke-[2.5]" />
+            </button>
+          )}
+
+          <button
+            onClick={onOpenStepDrawer}
+            className="flex-1 text-center font-sans text-xs sm:text-sm font-extrabold uppercase tracking-wider text-amber-300 drop-shadow hover:text-amber-200 transition-colors cursor-pointer truncate"
+            title="Tap to view all 11 views"
+          >
+            {currentView.name}
+          </button>
+
+          {onNext && (
+            <button
+              onClick={onNext}
+              disabled={currentIndex === totalViews - 1}
+              className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
+                currentIndex === totalViews - 1
+                  ? 'text-white/20 cursor-not-allowed'
+                  : 'text-white/70 hover:text-white active:scale-90 cursor-pointer'
+              }`}
+              aria-label="Next position"
+            >
+              <ChevronRight className="w-5 h-5 stroke-[2.5]" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 2. ZOOM DIAL & CAPTURE SETTINGS ROW */}
+      <div className="flex items-center gap-2 mb-2.5 flex-wrap justify-center px-4">
+        {/* Compact Zoom Selector (Standard iOS style) */}
+        <div className="flex items-center gap-0.5 bg-black/60 backdrop-blur-2xl border border-white/15 p-0.5 rounded-full shadow-lg">
           {[1.0, 1.5, 2.0, 3.0].map((z) => (
             <button
               key={z}
               id={`zoom-btn-${z.toString().replace('.', '_')}x`}
               onClick={() => onSetZoom(z)}
-              className={`px-3 py-1 rounded-full text-xs font-mono font-bold transition-all duration-200 active:scale-95 ${
+              className={`px-2.5 py-1 rounded-full text-[11px] font-mono font-bold transition-all duration-150 active:scale-95 ${
                 Math.abs(zoomLevel - z) < 0.1
-                  ? 'bg-cyan-500 text-slate-950 shadow-[0_0_12px_rgba(6,182,212,0.6)] scale-105'
-                  : 'text-slate-400 hover:text-white hover:bg-white/10'
+                  ? 'bg-white text-slate-950 font-black shadow-md scale-105'
+                  : 'text-white/70 hover:text-white hover:bg-white/10'
               }`}
             >
               {z}x
@@ -61,126 +127,128 @@ const CameraControlsComponent: React.FC<CameraControlsProps> = ({
           ))}
         </div>
 
+        {/* Capture Mode Pill */}
+        {onCycleCaptureMode && (
+          <button
+            id="quick-cycle-mode-btn"
+            onClick={onCycleCaptureMode}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-mono font-bold border backdrop-blur-xl transition-all shadow-md active:scale-95 ${
+              captureMode === 'fast'
+                ? 'bg-amber-500/25 border-amber-400 text-amber-300'
+                : captureMode === 'clinical'
+                ? 'bg-purple-500/25 border-purple-400 text-purple-300'
+                : 'bg-cyan-500/25 border-cyan-400 text-cyan-300'
+            }`}
+            title="Tap to cycle Capture Mode (Fast / Balanced / Clinical)"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+            <span className="uppercase">{captureMode}</span>
+          </button>
+        )}
+
         {/* Auto Capture AI Toggle */}
         {onToggleAutoCapture && (
           <button
             id="quick-toggle-auto-capture-btn"
             onClick={onToggleAutoCapture}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-mono font-bold border backdrop-blur-2xl transition-all shadow-xl active:scale-95 ${
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-mono font-bold border backdrop-blur-xl transition-all shadow-md active:scale-95 ${
               autoCaptureEnabled
-                ? 'bg-emerald-500/25 border-emerald-400/90 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.4)]'
-                : 'bg-black/80 border-white/15 text-slate-400 hover:text-slate-200'
+                ? 'bg-emerald-500/25 border-emerald-400 text-emerald-300'
+                : 'bg-black/60 border-white/15 text-slate-400 hover:text-white'
             }`}
-            title="Toggle Auto Photo Capture when aligned"
+            title="Toggle Auto Capture"
           >
-            <Sparkles className={`w-3.5 h-3.5 ${autoCaptureEnabled ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`} />
-            <span>AUTO {autoCaptureEnabled ? 'ON' : 'OFF'}</span>
+            <Sparkles className={`w-3 h-3 ${autoCaptureEnabled ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`} />
+            <span>AUTO</span>
           </button>
         )}
       </div>
 
-      {/* 2. Main Shutter Deck */}
-      <div className="w-full max-w-sm px-6 flex items-center justify-between">
-        {/* Flash Toggle */}
+      {/* 3. DEDICATED FORCE CAPTURE PILL (Spaced safely above the shutter, never overlapping) */}
+      {!isReady && onForceCapture && (
         <button
-          onClick={onCycleFlash}
-          className="w-12 h-12 rounded-2xl bg-slate-900/90 border border-slate-700/80 backdrop-blur-2xl text-slate-200 active:scale-90 hover:border-slate-500 transition-all flex flex-col items-center justify-center shadow-lg shadow-black/50"
-          aria-label="Flash mode"
+          id="force-capture-pill-btn"
+          onClick={onForceCapture}
+          className="mb-2 px-3 py-1 rounded-full bg-amber-500/90 hover:bg-amber-400 active:scale-95 text-slate-950 font-mono text-[10px] font-extrabold uppercase tracking-wider shadow-lg shadow-amber-500/30 border border-amber-300 flex items-center gap-1 transition-all cursor-pointer"
+          title="Manual override: take photo immediately without waiting for alignment"
         >
-          {flashMode === 'off' ? (
-            <ZapOff className="w-5 h-5 text-slate-400" />
-          ) : (
-            <Zap className={`w-5 h-5 ${flashMode === 'torch' ? 'text-amber-300 fill-amber-300' : 'text-yellow-400'}`} />
-          )}
-          <span className="text-[8px] font-mono uppercase mt-0.5 text-slate-400 font-bold">
-            {flashMode}
-          </span>
+          <Zap className="w-3 h-3 fill-current" />
+          <span>FORCE CAPTURE</span>
         </button>
+      )}
 
-        {/* Recent Capture Thumbnail Display & Quick Open Gallery */}
+      {/* 4. MAIN SHUTTER DECK (Standard Mobile Camera: Gallery | Shutter | Flip) */}
+      <div className="w-full max-w-xs px-4 flex items-center justify-between">
+        {/* Left: Gallery Thumbnail */}
         <button
           type="button"
           id="gallery-thumbnail-btn"
           onClick={onOpenGallery}
-          className="relative w-12 h-12 rounded-2xl bg-slate-900/90 border border-slate-700/80 backdrop-blur-2xl text-slate-200 overflow-hidden flex items-center justify-center shadow-lg shadow-black/50 active:scale-90 hover:border-emerald-400 hover:shadow-[0_0_15px_rgba(16,185,129,0.35)] transition-all cursor-pointer group focus:outline-none focus:ring-2 focus:ring-emerald-400/50"
-          title={latestPhotoThumbnail ? "Open in Mobile Gallery (Pictures/Orthocamera)" : "Mobile Gallery"}
-          aria-label="Open mobile gallery"
+          className="relative w-13 h-13 rounded-full bg-black/60 border-2 border-white/40 backdrop-blur-xl text-white overflow-hidden flex items-center justify-center shadow-lg active:scale-90 hover:border-white transition-all cursor-pointer"
+          title="Open Device Gallery"
+          aria-label="Open gallery"
         >
           {latestPhotoThumbnail ? (
-            <>
-              <img
-                src={latestPhotoThumbnail}
-                alt="Latest Captured"
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200 pointer-events-none"
-              />
-              <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors pointer-events-none" />
-            </>
+            <img
+              src={latestPhotoThumbnail}
+              alt="Latest Photo"
+              className="w-full h-full object-cover pointer-events-none"
+            />
           ) : (
-            <ImageIcon className="w-5 h-5 text-slate-300 group-hover:text-emerald-300 transition-colors pointer-events-none" />
+            <ImageIcon className="w-6 h-6 text-white/70 pointer-events-none" />
           )}
+
           {capturedCount > 0 && (
-            <span className="absolute -top-1 -right-1 bg-emerald-500 text-slate-950 text-[10px] font-mono font-extrabold w-5 h-5 rounded-full flex items-center justify-center shadow-[0_0_8px_rgba(16,185,129,0.6)] pointer-events-none">
+            <span className="absolute -top-1 -right-1 bg-emerald-500 text-slate-950 text-[10px] font-mono font-black w-4.5 h-4.5 rounded-full flex items-center justify-center shadow-md pointer-events-none">
               {capturedCount}
             </span>
           )}
         </button>
 
-        {/* Shutter Button Container */}
+        {/* Center: Mobile Shutter Button */}
         <div className="relative flex items-center justify-center">
-          {/* Pulsing halo wave when ready */}
+          {/* Pulsing ring when aligned */}
           {isReady && (
-            <div className="absolute -inset-3 rounded-full border-2 border-emerald-400/80 animate-ping pointer-events-none" />
+            <div className="absolute -inset-2.5 rounded-full border-2 border-emerald-400 animate-ping pointer-events-none" />
           )}
 
-          {/* Shutter Button */}
           <button
             id="shutter-capture-btn"
             onClick={onCapture}
-            className={`relative w-20 h-20 rounded-full border-4 p-1.5 flex items-center justify-center transition-all duration-300 active:scale-90 ${
+            className={`relative w-18 h-18 rounded-full border-4 p-1 flex items-center justify-center transition-all duration-200 active:scale-90 cursor-pointer ${
               isReady
-                ? 'border-emerald-400 bg-emerald-500/20 shadow-[0_0_35px_rgba(16,185,129,0.65)]'
-                : 'border-white/80 bg-white/10 shadow-[0_0_20px_rgba(0,0,0,0.8)] hover:border-white'
+                ? 'border-emerald-400 bg-emerald-500/20 shadow-[0_0_30px_rgba(16,185,129,0.7)]'
+                : 'border-white bg-white/10 shadow-[0_0_20px_rgba(0,0,0,0.6)] hover:scale-102'
             }`}
-            aria-label="Capture photo"
+            aria-label="Take photo"
+            title="Press shutter to capture immediately"
           >
-            {/* Inner Shutter Core */}
+            {/* White inner core disc */}
             <div
-              className={`w-full h-full rounded-full transition-all duration-200 ${
+              className={`w-full h-full rounded-full transition-all duration-150 ${
                 isReady
-                  ? 'bg-gradient-to-tr from-emerald-400 to-emerald-300 shadow-[0_0_16px_#34d399]'
-                  : 'bg-white shadow-[0_0_12px_rgba(255,255,255,0.8)]'
+                  ? 'bg-emerald-400 shadow-[0_0_12px_#34d399]'
+                  : 'bg-white shadow-[0_0_10px_rgba(255,255,255,0.7)]'
               }`}
             />
 
-            {/* Instant Ready State */}
-            {isReady && (
-              <div className="absolute inset-0 flex items-center justify-center rounded-full bg-emerald-950/75 backdrop-blur-[2px]">
-                <span className="font-mono font-black text-xs tracking-wider text-emerald-200 uppercase drop-shadow-md">
-                  READY
-                </span>
-              </div>
+            {/* Countdown overlay if countdown active */}
+            {autoCaptureCountdown !== null && autoCaptureCountdown > 0 && (
+              <span className="absolute font-mono font-black text-xl text-slate-950 pointer-events-none">
+                {autoCaptureCountdown}
+              </span>
             )}
           </button>
         </div>
 
-        {/* Flip Front/Rear Camera */}
+        {/* Right: Camera Flip Button */}
         <button
           onClick={onSwitchCamera}
-          className="w-12 h-12 rounded-2xl bg-slate-900/90 border border-slate-700/80 backdrop-blur-2xl text-slate-200 active:scale-90 hover:border-slate-500 transition-all flex flex-col items-center justify-center shadow-lg shadow-black/50"
+          className="w-13 h-13 rounded-full bg-black/60 border-2 border-white/40 backdrop-blur-xl text-white active:scale-90 hover:border-white transition-all flex items-center justify-center shadow-lg cursor-pointer"
           aria-label="Switch camera"
+          title="Switch front / rear camera"
         >
-          <RefreshCw className="w-5 h-5 text-slate-300" />
-          <span className="text-[8px] font-mono uppercase mt-0.5 text-slate-400 font-bold">Flip</span>
-        </button>
-
-        {/* Settings */}
-        <button
-          onClick={onOpenSettings}
-          className="w-12 h-12 rounded-2xl bg-slate-900/90 border border-slate-700/80 backdrop-blur-2xl text-slate-200 active:scale-90 hover:border-slate-500 transition-all flex flex-col items-center justify-center shadow-lg shadow-black/50"
-          aria-label="Settings"
-        >
-          <Sliders className="w-5 h-5 text-slate-300" />
-          <span className="text-[8px] font-mono uppercase mt-0.5 text-slate-400 font-bold">Tools</span>
+          <RefreshCw className="w-6 h-6 text-white/80" />
         </button>
       </div>
     </div>

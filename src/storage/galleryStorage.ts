@@ -216,10 +216,14 @@ export class GalleryStorage {
   }
 
   /**
-   * Opens the device's native Gallery or Photos app.
-   * If a specific photo URI is provided or was recently saved, opens that photo directly in the gallery viewer.
+   * Opens the device's native Gallery or Photos app (Google Photos, Samsung Gallery)
+   * or triggers the device photo gallery picker in mobile / desktop web browsers.
+   * If a specific photo URI is provided or was recently saved, opens that photo directly.
    */
-  public static async openGallery(uri?: string): Promise<{ success: boolean; error?: string }> {
+  public static async openGallery(
+    uri?: string,
+    onPhotoSelected?: (dataUrl: string, file: File) => void
+  ): Promise<{ success: boolean; error?: string }> {
     const targetUri = uri || this.lastSavedUri || undefined;
     if (this.isNativeAndroid()) {
       try {
@@ -231,6 +235,56 @@ export class GalleryStorage {
         return { success: false, error: errorMsg };
       }
     }
-    return { success: false, error: 'Not running on native Android device' };
+
+    // Web / PWA / Mobile Browser environment:
+    // Programmatically launch the native device photo gallery / picker via HTML5 file input
+    if (typeof document !== 'undefined') {
+      try {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.style.position = 'fixed';
+        input.style.top = '-9999px';
+        input.style.left = '-9999px';
+        input.style.opacity = '0';
+        input.setAttribute('aria-hidden', 'true');
+
+        if (onPhotoSelected && typeof input.addEventListener === 'function') {
+          input.addEventListener('change', (e) => {
+            const file = (e.target as HTMLInputElement).files?.[0];
+            if (file) {
+              const reader = new FileReader();
+              reader.onload = () => {
+                if (typeof reader.result === 'string') {
+                  onPhotoSelected(reader.result, file);
+                }
+              };
+              reader.readAsDataURL(file);
+            }
+          });
+        }
+
+        if (document.body && typeof document.body.appendChild === 'function') {
+          document.body.appendChild(input);
+        }
+        if (typeof input.click === 'function') {
+          input.click();
+        }
+
+        setTimeout(() => {
+          if (input.parentNode && typeof input.parentNode.removeChild === 'function') {
+            input.parentNode.removeChild(input);
+          }
+        }, 3000);
+
+        return { success: true };
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        console.warn('[GalleryStorage] Web gallery picker launch failed:', err);
+        return { success: false, error: errorMsg };
+      }
+    }
+
+    return { success: false, error: 'Not running in a supported browser or native Android environment' };
   }
 }
