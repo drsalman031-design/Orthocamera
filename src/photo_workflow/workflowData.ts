@@ -97,10 +97,10 @@ export const ORTHODONTIC_VIEWS: OrthodonticViewDefinition[] = [
     clinicalPurpose:
       'Assess sagittal skeletal relationship (Class I, II, or III), soft tissue facial convexity, nasolabial angle, chin projection, and E-line lip posture.',
     landmarks: [
+      'Mandibular Plane (Gonion-Menton Jawline)',
       'Frankfort Horizontal Plane (Porion-Orbitale)',
-      'True Vertical Plumb Line (Subnasale NHP reference)',
       'Ricketts E-Line (Esthetic Line: Tip of Nose to Pogonion)',
-      'Nasolabial Angle (90°-110° reference)',
+      'Live FMA Angle & Facial Biotype Indicator',
     ],
     tips: [
       'Patient turned exactly 90 degrees to the right',
@@ -139,10 +139,10 @@ export const ORTHODONTIC_VIEWS: OrthodonticViewDefinition[] = [
     clinicalPurpose:
       'Evaluate bilateral soft tissue profile symmetry, mandibular growth direction, and lip projection on patient’s left aspect.',
     landmarks: [
+      'Mandibular Plane (Gonion-Menton Jawline)',
       'Frankfort Horizontal Plane (Porion-Orbitale)',
-      'True Vertical Plumb Line (Natural Head Position)',
       'Ricketts Esthetic Plane',
-      'Subnasale to Soft Tissue Pogonion',
+      'Live FMA Angle & Facial Biotype Indicator',
     ],
     tips: [
       'Patient turned exactly 90 degrees to the left',

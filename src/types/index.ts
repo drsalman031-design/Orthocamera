@@ -181,9 +181,14 @@ export interface LiveGuidanceState {
     leftCheek?: { x: number; y: number };
     rightCheek?: { x: number; y: number };
     leftMouthCorner?: { x: number; y: number };
-    rightMouthCorner?: { x: number; y: number };
     upperLip?: { x: number; y: number };
     lowerLip?: { x: number; y: number };
+    subnasale?: { x: number; y: number };
+    menton?: { x: number; y: number };
+    leftTragus?: { x: number; y: number };
+    rightTragus?: { x: number; y: number };
+    leftGonion?: { x: number; y: number };
+    rightGonion?: { x: number; y: number };
   };
 
   // Rigorous CV Evidence Fields

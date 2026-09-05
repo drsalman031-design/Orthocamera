@@ -78,11 +78,13 @@ export const ProgressDrawer: React.FC<ProgressDrawerProps> = ({
         <div className="flex items-center gap-2.5">
           {capturedPhotos[v.id] && (
             <>
-              <img
-                src={capturedPhotos[v.id]!.dataUrl}
-                alt={v.name}
-                className="w-8 h-8 rounded-lg object-cover border border-slate-700/80 shadow-md"
-              />
+              {capturedPhotos[v.id]?.dataUrl ? (
+                <img
+                  src={capturedPhotos[v.id]!.dataUrl}
+                  alt={v.name}
+                  className="w-8 h-8 rounded-lg object-cover border border-slate-700/80 shadow-md"
+                />
+              ) : null}
               {onDeletePhoto && (
                 <button
                   type="button"

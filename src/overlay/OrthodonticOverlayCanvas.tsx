@@ -740,32 +740,202 @@ const OrthodonticOverlayCanvasComponent: React.FC<OrthodonticOverlayProps> = ({
               </g>
             )}
 
-            {/* Dynamic Ricketts E-Line for Profile Views */}
-            {view.id.includes('PROFILE') && guidance.detectedFaceLandmarks?.noseTip && guidance.detectedFaceLandmarks?.chinTip && (
-              <g>
-                <line
-                  x1={(guidance.detectedFaceLandmarks.noseTip.x * W).toFixed(1)}
-                  y1={(guidance.detectedFaceLandmarks.noseTip.y * H).toFixed(1)}
-                  x2={(guidance.detectedFaceLandmarks.chinTip.x * W).toFixed(1)}
-                  y2={(guidance.detectedFaceLandmarks.chinTip.y * H).toFixed(1)}
-                  stroke={isReady ? '#10b981' : '#f59e0b'}
-                  strokeWidth="2.5"
-                  strokeDasharray={isReady ? 'none' : '5,4'}
-                />
-                <circle
-                  cx={(guidance.detectedFaceLandmarks.noseTip.x * W).toFixed(1)}
-                  cy={(guidance.detectedFaceLandmarks.noseTip.y * H).toFixed(1)}
-                  r="5"
-                  fill={isReady ? '#10b981' : '#f59e0b'}
-                />
-                <circle
-                  cx={(guidance.detectedFaceLandmarks.chinTip.x * W).toFixed(1)}
-                  cy={(guidance.detectedFaceLandmarks.chinTip.y * H).toFixed(1)}
-                  r="5"
-                  fill={isReady ? '#10b981' : '#f59e0b'}
-                />
-              </g>
-            )}
+            {/* ========================================================================= */}
+            {/* Dynamic Sagittal Profile Analysis: Ricketts E-Line, Mandibular Plane & FMA */}
+            {/* ========================================================================= */}
+            {view.id.includes('PROFILE') && (() => {
+              const isRightProfile = view.id === 'RIGHT_PROFILE';
+              const noseTip = guidance.detectedFaceLandmarks?.noseTip;
+              const chinTip = guidance.detectedFaceLandmarks?.chinTip;
+              const menton = guidance.detectedFaceLandmarks?.menton || chinTip;
+              const gonion = isRightProfile
+                ? guidance.detectedFaceLandmarks?.rightGonion
+                : guidance.detectedFaceLandmarks?.leftGonion;
+              const tragus = isRightProfile
+                ? guidance.detectedFaceLandmarks?.rightTragus
+                : guidance.detectedFaceLandmarks?.leftTragus;
+              const anteriorEye = isRightProfile
+                ? guidance.detectedFaceLandmarks?.rightEye
+                : guidance.detectedFaceLandmarks?.leftEye;
+              const subnasale = guidance.detectedFaceLandmarks?.subnasale;
+
+              // Calculate Mandibular Plane angle and FMA (Frankfort-Mandibular Plane Angle)
+              let fmaDeg: number | null = null;
+              let facialBiotype = '';
+              let biotypeColor = '#10b981';
+
+              if (gonion && menton) {
+                const mpDx = (menton.x - gonion.x) * W;
+                const mpDy = (menton.y - gonion.y) * H;
+                const mpAngleDeg = Math.abs(Math.atan2(mpDy, Math.abs(mpDx)) * (180 / Math.PI));
+
+                let fhAngleDeg = 0;
+                if (tragus && (anteriorEye || subnasale)) {
+                  const antRef = subnasale || anteriorEye!;
+                  const fhDx = (antRef.x - tragus.x) * W;
+                  const fhDy = (antRef.y - tragus.y) * H;
+                  fhAngleDeg = Math.atan2(fhDy, Math.abs(fhDx)) * (180 / Math.PI);
+                }
+
+                fmaDeg = Math.round(Math.abs(mpAngleDeg - fhAngleDeg));
+                if (fmaDeg < 21) {
+                  facialBiotype = 'Hypodivergent (Low Angle)';
+                  biotypeColor = '#38bdf8';
+                } else if (fmaDeg > 30) {
+                  facialBiotype = 'Hyperdivergent (High Angle)';
+                  biotypeColor = '#f59e0b';
+                } else {
+                  facialBiotype = 'Normodivergent (Average)';
+                  biotypeColor = '#10b981';
+                }
+              }
+
+              return (
+                <g>
+                  {/* 1. Ricketts E-Line (Esthetic Line: Nose Tip to Pogonion/Chin) */}
+                  {noseTip && chinTip && (
+                    <g>
+                      <line
+                        x1={(noseTip.x * W).toFixed(1)}
+                        y1={(noseTip.y * H).toFixed(1)}
+                        x2={(chinTip.x * W).toFixed(1)}
+                        y2={(chinTip.y * H).toFixed(1)}
+                        stroke={isReady ? '#10b981' : '#f59e0b'}
+                        strokeWidth="2.5"
+                        strokeDasharray={isReady ? 'none' : '5,4'}
+                      />
+                      <circle
+                        cx={(noseTip.x * W).toFixed(1)}
+                        cy={(noseTip.y * H).toFixed(1)}
+                        r="4.5"
+                        fill={isReady ? '#10b981' : '#f59e0b'}
+                      />
+                      <circle
+                        cx={(chinTip.x * W).toFixed(1)}
+                        cy={(chinTip.y * H).toFixed(1)}
+                        r="4.5"
+                        fill={isReady ? '#10b981' : '#f59e0b'}
+                      />
+                      {showLabels && (
+                        <LabelPill
+                          x={isRightProfile ? (noseTip.x * W + 15) : (noseTip.x * W - 15)}
+                          y={((noseTip.y + chinTip.y) / 2 * H)}
+                          text="RICKETTS E-LINE"
+                          subtext="Esthetic Plane (Pn-Pog)"
+                          align={isRightProfile ? 'start' : 'end'}
+                          baseColor={isReady ? '#10b981' : '#f59e0b'}
+                          fontSize={11}
+                        />
+                      )}
+                    </g>
+                  )}
+
+                  {/* 2. Frankfort Horizontal (FH) Plane (Tragus/Porion to Orbitale/Subnasale level) */}
+                  {tragus && (
+                    <g>
+                      <line
+                        x1={((tragus.x + (isRightProfile ? 0.04 : -0.04)) * W).toFixed(1)}
+                        y1={(tragus.y * H).toFixed(1)}
+                        x2={((isRightProfile ? 0.95 : 0.05) * W).toFixed(1)}
+                        y2={(tragus.y * H).toFixed(1)}
+                        stroke="rgba(56, 189, 248, 0.75)"
+                        strokeWidth="1.8"
+                        strokeDasharray="8,6"
+                      />
+                      <circle
+                        cx={(tragus.x * W).toFixed(1)}
+                        cy={(tragus.y * H).toFixed(1)}
+                        r="4"
+                        fill="#38bdf8"
+                      />
+                      {showLabels && (
+                        <LabelPill
+                          x={(tragus.x * W)}
+                          y={(tragus.y * H - 8)}
+                          text="FH PLANE"
+                          subtext="Porion-Orbitale"
+                          align={isRightProfile ? 'start' : 'end'}
+                          baseColor="#38bdf8"
+                          fontSize={11}
+                        />
+                      )}
+                    </g>
+                  )}
+
+                  {/* 3. Mandibular Plane (Go-Me: Lower Border of Mandible) */}
+                  {gonion && menton && (
+                    <g>
+                      <line
+                        x1={(gonion.x * W).toFixed(1)}
+                        y1={(gonion.y * H).toFixed(1)}
+                        x2={(menton.x * W).toFixed(1)}
+                        y2={(menton.y * H).toFixed(1)}
+                        stroke={isReady ? '#10b981' : '#06b6d4'}
+                        strokeWidth="3"
+                      />
+                      {/* Gonion Node */}
+                      <circle
+                        cx={(gonion.x * W).toFixed(1)}
+                        cy={(gonion.y * H).toFixed(1)}
+                        r="5"
+                        fill={isReady ? '#10b981' : '#06b6d4'}
+                      />
+                      {/* Menton Node */}
+                      <circle
+                        cx={(menton.x * W).toFixed(1)}
+                        cy={(menton.y * H).toFixed(1)}
+                        r="5"
+                        fill={isReady ? '#10b981' : '#06b6d4'}
+                      />
+                      {showLabels && (
+                        <LabelPill
+                          x={((gonion.x + menton.x) / 2 * W)}
+                          y={((gonion.y + menton.y) / 2 * H + 24)}
+                          text="MANDIBULAR PLANE"
+                          subtext="Gonion (Go) - Menton (Me)"
+                          align="middle"
+                          baseColor={isReady ? '#10b981' : '#06b6d4'}
+                          fontSize={11}
+                        />
+                      )}
+                    </g>
+                  )}
+
+                  {/* 4. Real-Time FMA Angle HUD Badge */}
+                  {fmaDeg !== null && (
+                    <g transform={`translate(${(0.5 * W).toFixed(1)}, ${(0.14 * H).toFixed(1)})`}>
+                      <rect
+                        x="-135"
+                        y="-16"
+                        width="270"
+                        height="34"
+                        rx="17"
+                        fill="#080c14"
+                        fillOpacity={0.92}
+                        stroke={biotypeColor}
+                        strokeWidth={1.5}
+                      />
+                      <circle
+                        cx={-112}
+                        cy={1}
+                        r="5"
+                        fill={biotypeColor}
+                      />
+                      <text
+                        x={-96}
+                        y={5}
+                        fill={biotypeColor}
+                        fontSize="11"
+                        fontWeight="700"
+                        fontFamily="JetBrains Mono, monospace"
+                      >
+                        {`FMA: ${fmaDeg}° • ${facialBiotype}`}
+                      </text>
+                    </g>
+                  )}
+                </g>
+              );
+            })()}
 
             {/* Dynamic 45° Angle Alignment Gauge for Oblique Views */}
             {view.id.includes('OBLIQUE') && (

@@ -52,7 +52,9 @@ class IndexedDbStorageService {
   }
 
   /**
-   * Save or update a clinical case metadata and photos into IndexedDB
+  /**
+   * Save or update clinical case metadata into IndexedDB without storing heavy photo binaries.
+   * Photos are directly stored in the phone gallery/downloads to prevent app storage bloat.
    */
   public async saveCase(clinicalCase: ClinicalCase): Promise<void> {
     const db = await this.getDB();
@@ -62,28 +64,36 @@ class IndexedDbStorageService {
       const caseStore = tx.objectStore(STORE_CASES);
       const photoStore = tx.objectStore(STORE_PHOTOS);
 
-      // Save photos in photoStore and reference them
-      const photosCopy = { ...clinicalCase.photos };
-
-      for (const viewId of Object.keys(photosCopy) as ViewId[]) {
-        const photo = photosCopy[viewId];
-        if (photo) {
-          photoStore.put({
-            id: photo.id,
-            caseId: clinicalCase.id,
-            viewId,
-            dataUrl: photo.dataUrl,
-            timestamp: photo.timestamp,
-            quality: photo.quality,
-            width: photo.width,
-            height: photo.height,
-          });
-        }
+      // Clean up any previously stored photo blobs for this case
+      try {
+        const photoIndex = photoStore.index('caseId');
+        const req = photoIndex.openCursor(IDBKeyRange.only(clinicalCase.id));
+        req.onsuccess = (e) => {
+          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+          if (cursor) {
+            cursor.delete();
+            cursor.continue();
+          }
+        };
+      } catch {
+        // index might not exist or failed
       }
 
-      // Save case metadata (with photos embedded for quick retrieval)
+      // Strip heavy Base64 dataUrl from photos before saving to caseStore
+      const lightweightPhotos = Object.keys(clinicalCase.photos).reduce((acc, key) => {
+        const photo = clinicalCase.photos[key as ViewId];
+        if (photo) {
+          acc[key as ViewId] = {
+            ...photo,
+            dataUrl: '', // Stripped: stored directly in phone gallery/downloads
+          };
+        }
+        return acc;
+      }, {} as typeof clinicalCase.photos);
+
       const caseRecord = {
         ...clinicalCase,
+        photos: lightweightPhotos,
         updatedAt: Date.now(),
       };
 
@@ -102,6 +112,49 @@ class IndexedDbStorageService {
         reject(tx.error);
       };
     });
+  }
+
+  /**
+   * Purge all internal photo blobs from IndexedDB to free device memory.
+   */
+  public async clearAllInternalPhotos(): Promise<void> {
+    try {
+      const db = await this.getDB();
+      return new Promise((resolve) => {
+        const tx = db.transaction([STORE_CASES, STORE_PHOTOS], 'readwrite');
+        const caseStore = tx.objectStore(STORE_CASES);
+        const photoStore = tx.objectStore(STORE_PHOTOS);
+
+        photoStore.clear();
+
+        const req = caseStore.openCursor();
+        req.onsuccess = (e) => {
+          const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+          if (cursor) {
+            const caseData: ClinicalCase = cursor.value;
+            if (caseData && caseData.photos) {
+              let modified = false;
+              const photos = { ...caseData.photos };
+              for (const viewId of Object.keys(photos) as ViewId[]) {
+                if (photos[viewId]?.dataUrl) {
+                  photos[viewId] = { ...photos[viewId]!, dataUrl: '' };
+                  modified = true;
+                }
+              }
+              if (modified) {
+                cursor.update({ ...caseData, photos });
+              }
+            }
+            cursor.continue();
+          }
+        };
+
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+    } catch {
+      // ignore
+    }
   }
 
   /**

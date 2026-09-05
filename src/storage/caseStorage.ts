@@ -15,6 +15,8 @@ export class CaseStorage {
   public static async init(): Promise<void> {
     if (isInitialized) return;
     try {
+      // Purge any legacy internal photo blobs to free device storage completely
+      indexedDbStorage.clearAllInternalPhotos().catch(() => {});
       cachedCases = await indexedDbStorage.getAllCases();
       isInitialized = true;
     } catch (err) {

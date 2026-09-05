@@ -274,36 +274,27 @@ export default function App() {
       setFlashGreenConfirmation(true);
       setTimeout(() => setFlashGreenConfirmation(false), 800);
 
-      // 4. Save to phone gallery ONLY if autoSaveToGallery is enabled
-      if (settings.autoSaveToGallery) {
-        GalleryStorage.savePhotoToGallery(photo, activeCase, currentView).then((saveRes) => {
-          CapturePerformanceTracker.recordGallerySaveCompleted();
-          if (saveRes.success && saveRes.method === 'gallery') {
-            setGalleryToast({
-              message: 'Saved to Gallery',
-              filename: `${saveRes.filename} (Pictures/Orthocamera)`,
-            });
-          } else if (saveRes.success && saveRes.method === 'downloads') {
-            setGalleryToast({
-              message: 'Saved to Downloads',
-              filename: saveRes.filename,
-            });
-          } else {
-            setGalleryToast({
-              message: 'Save Failed',
-              filename: saveRes.error || saveRes.filename,
-            });
-          }
-          setTimeout(() => setGalleryToast(null), 3500);
-        });
-      } else {
+      // 4. Directly save photo to phone gallery (internal app database storage bypassed)
+      GalleryStorage.savePhotoToGallery(photo, activeCase, currentView).then((saveRes) => {
         CapturePerformanceTracker.recordGallerySaveCompleted();
-        setGalleryToast({
-          message: 'Photo Captured',
-          filename: `Stored in Case Record (${currentView.name})`,
-        });
-        setTimeout(() => setGalleryToast(null), 2500);
-      }
+        if (saveRes.success && saveRes.method === 'gallery') {
+          setGalleryToast({
+            message: 'Saved directly to Gallery',
+            filename: `${saveRes.filename} (Pictures/Orthocamera)`,
+          });
+        } else if (saveRes.success && saveRes.method === 'downloads') {
+          setGalleryToast({
+            message: 'Saved directly to Downloads',
+            filename: saveRes.filename,
+          });
+        } else {
+          setGalleryToast({
+            message: 'Gallery Save Failed',
+            filename: saveRes.error || saveRes.filename,
+          });
+        }
+        setTimeout(() => setGalleryToast(null), 3500);
+      });
 
       // 5. Hands-Free Auto Advance Workflow (Advance to next view, no zip modal)
       if (settings.handsFreeAutoAdvance) {
@@ -314,9 +305,7 @@ export default function App() {
           // All 11 photos complete
           setGalleryToast({
             message: 'All 11 Photos Captured!',
-            filename: settings.autoSaveToGallery
-              ? 'Complete set in Pictures/Orthocamera'
-              : 'Complete set saved in case record',
+            filename: 'Complete set in Pictures/Orthocamera',
           });
           setTimeout(() => setGalleryToast(null), 5000);
         }
