@@ -702,6 +702,12 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
     const runAnalysisLoop = (timestamp: number) => {
       if (!isRunning) return;
 
+      // Thermal safeguard: pause AI processing when screen is off, minimized, or backgrounded
+      if (typeof document !== 'undefined' && document.hidden) {
+        requestAnimationFrame(runAnalysisLoop);
+        return;
+      }
+
       // Track Camera FPS
       fpsFrameCountRef.current++;
       if (timestamp - lastFpsCalcTimeRef.current >= 1000) {
@@ -710,8 +716,10 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
         lastFpsCalcTimeRef.current = timestamp;
       }
 
-      // Responsive AI analysis cadence (~18 FPS / 55ms) to ensure swift capture response and 60fps video smoothness
-      if (timestamp - lastAnalysisTime >= 55) {
+      // Thermal-safe AI analysis cadence (~9-10 FPS / 105ms)
+      // Provides ~90ms idle GPU/CPU cooldown between inferences, preventing phone overheating and battery drain
+      // while maintaining fluid, real-time clinical alignment and instant auto-capture.
+      if (timestamp - lastAnalysisTime >= 105) {
         lastAnalysisTime = timestamp;
         aiFrameCountRef.current++;
 
@@ -725,21 +733,26 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
         const isFeedActive = video && video.readyState >= 2 && video.videoWidth > 0;
 
         if (isFeedActive && video) {
-          // Optimized 240x180 buffer size: 44% fewer pixels than 320x240, zero frame drops
-          if (!sampleCanvasRef.current) {
+          // Optimized 256xAspect buffer: 56x fewer pixels than 1080p, perfectly matching MediaPipe's tensor input
+          const sampleW = 256;
+          const sampleH = video.videoHeight > 0
+            ? Math.round(256 * (video.videoHeight / video.videoWidth))
+            : 144;
+
+          if (!sampleCanvasRef.current || sampleCanvasRef.current.width !== sampleW || sampleCanvasRef.current.height !== sampleH) {
             sampleCanvasRef.current = document.createElement('canvas');
-            sampleCanvasRef.current.width = 240;
-            sampleCanvasRef.current.height = 180;
+            sampleCanvasRef.current.width = sampleW;
+            sampleCanvasRef.current.height = sampleH;
           }
           const sampleCanvas = sampleCanvasRef.current;
           const ctx = sampleCanvas.getContext('2d', { willReadFrequently: true });
 
           if (ctx) {
             const inferenceStart = performance.now();
-            ctx.drawImage(video, 0, 0, 240, 180);
+            ctx.drawImage(video, 0, 0, sampleW, sampleH);
 
             // Single fast pass for optical motion, luminance and edge sharpness
-            const motionRes = motionEngineRef.current.evaluateFrameMotion(ctx, 240, 180);
+            const motionRes = motionEngineRef.current.evaluateFrameMotion(ctx, sampleW, sampleH);
             motionScoreRef.current = motionRes.motionScore;
 
             const activeView = currentViewRef.current;
@@ -748,7 +761,7 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
             let profileState: ProfileStateResult | null = null;
 
             if (activeView.category === 'extraoral') {
-              faceRes = faceAnalyzerRef.current.analyzeFrame(sampleCanvas, ctx, 240, 180, video);
+              faceRes = faceAnalyzerRef.current.analyzeFrame(sampleCanvas, ctx, sampleW, sampleH, video);
 
               // If user/front camera is active (mirrored display), mirror face analysis results
               // so that yaw, roll, centering, and mesh contours perfectly match the user's on-screen mirror view
@@ -786,8 +799,8 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
               intraRes = intraoralAnalyzerRef.current.analyzeIntraoralFrame(
                 sampleCanvas,
                 ctx,
-                240,
-                180,
+                sampleW,
+                sampleH,
                 activeView.overlayType as 'anterior' | 'right_buccal' | 'left_buccal' | 'maxillary_occlusal' | 'mandibular_occlusal',
                 video
               );
@@ -809,8 +822,8 @@ const CameraManagerComponent: React.FC<CameraManagerProps> = ({
 
             latestGuidanceRef.current = guidance;
 
-            // Dispatch guidance to React state throttled to prevent UI main-thread sticking
-            if (timestamp - lastGuidanceDispatchTimeRef.current >= 55) {
+            // Dispatch guidance to React state throttled to 105ms to prevent UI main-thread re-render storms
+            if (timestamp - lastGuidanceDispatchTimeRef.current >= 105) {
               lastGuidanceDispatchTimeRef.current = timestamp;
               onGuidanceUpdateRef.current(guidance);
             }

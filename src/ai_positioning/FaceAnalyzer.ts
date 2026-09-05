@@ -112,10 +112,11 @@ export class OnDeviceFaceAnalyzer implements IFaceAnalyzer {
 
       // 1. Check MediaPipe on-device ML FaceLandmarker first (preferred high-quality detector)
       if (MediaPipeVision.getStatus().isReady) {
+        // Prioritize downsampled sourceCanvas to eliminate massive 1080p GPU texture uploads and thermal throttle
         const mpSource =
-          videoElement && videoElement.readyState >= 2 && videoElement.videoWidth > 0
-            ? videoElement
-            : (sourceCanvas instanceof HTMLCanvasElement && sourceCanvas.width > 0 ? sourceCanvas : null);
+          sourceCanvas instanceof HTMLCanvasElement && sourceCanvas.width > 0
+            ? sourceCanvas
+            : (videoElement && videoElement.readyState >= 2 && videoElement.videoWidth > 0 ? videoElement : null);
 
         if (mpSource) {
           const mpResult = MediaPipeVision.detectForVideo(mpSource, now);

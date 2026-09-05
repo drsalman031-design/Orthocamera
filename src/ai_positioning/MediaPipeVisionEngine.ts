@@ -124,7 +124,7 @@ class MediaPipeVisionEngineSingleton {
             delegate,
           },
           outputFaceBlendshapes: true,
-          outputFacialTransformationMatrixes: true,
+          outputFacialTransformationMatrixes: false, // Disabled to eliminate heavy unused 4x4 matrix calculations
           runningMode: 'VIDEO',
           numFaces: 1,
           minFaceDetectionConfidence: 0.35,
@@ -200,8 +200,8 @@ class MediaPipeVisionEngineSingleton {
       return this.lastResult;
     }
 
-    // Guard against re-entrant calls within 40ms; CameraManager regulates main ~80ms cadence
-    if (timestampMs - this.lastInferenceTime < 40) {
+    // Guard against re-entrant calls within 80ms to prevent GPU thermal saturation
+    if (timestampMs - this.lastInferenceTime < 80) {
       return this.lastResult;
     }
 
